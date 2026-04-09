@@ -1,0 +1,17 @@
+{
+  "chunk_size": 40000.0,
+  "show_account": false,
+  "total_position": "right",
+  "columns": [
+    "Assignment",
+    "Document Number",
+    "Reference Key 3",
+    "Document Date",
+    "Net due date",
+    "Document Type",
+    "Amount in local currency"
+  ],
+  "sort_by": [
+    "Net due date"
+  ]
+}
