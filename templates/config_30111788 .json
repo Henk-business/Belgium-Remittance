@@ -1,6 +1,6 @@
 {
   "chunk_size": 40000.0,
-  "show_account": false,
+  "show_account": true,
   "total_position": "right",
   "columns": [
     "Assignment",
