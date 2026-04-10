@@ -1,0 +1,70 @@
+import streamlit as st
+
+
+def show():
+    st.markdown("""
+    <style>
+    .tool-card {
+        background: white; border: 1px solid #e2e8f0; border-radius: 16px;
+        padding: 28px; box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+    .tool-card .icon { font-size: 32px; margin-bottom: 14px; }
+    .tool-card h3 { font-size: 16px; font-weight: 700; margin: 0 0 8px; color: #0f172a; }
+    .tool-card p  { font-size: 13px; color: #64748b; line-height: 1.6; margin: 0 0 12px; }
+    .feat { font-size: 12px; color: #475569; padding: 3px 0; }
+    .feat::before { content: "→  "; color: #1d4ed8; font-weight: 600; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="background:linear-gradient(135deg,#0f172a,#1e3a5f,#1d4ed8);
+                border-radius:16px; padding:40px; color:white; margin-bottom:28px;">
+        <div style="font-size:32px;font-weight:700;margin-bottom:8px;">💼 AR Suite</div>
+        <div style="font-size:15px;opacity:.75;max-width:520px;line-height:1.6;">
+            A unified toolkit for your Accounts Receivable team.
+            Match client remittances, split multi-account exports,
+            generate customer statements, and draft emails — all in one place.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("""
+        <div class="tool-card">
+            <div class="icon">🔍</div>
+            <h3>Remittance Reconciliation</h3>
+            <p>Upload a SAP export and a client remittance. Automatically matches
+               invoices, flags doubles, and shows what the customer still owes.</p>
+            <div class="feat">SAP is the source of truth — ignores client sign conventions</div>
+            <div class="feat">Matches by Assignment, Document Number, or substring</div>
+            <div class="feat">Flags already-cleared items (potential doubles)</div>
+            <div class="feat">Generates a customer statement (Section A/B/C format)</div>
+            <div class="feat">Draft follow-up email in English, Dutch, or French</div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.write("")
+        if st.button("Open Remittance Tool →", use_container_width=True, key="btn_rem"):
+            st.session_state["active_page"] = "🔍  Remittance Reconciliation"
+            st.rerun()
+
+    with col2:
+        st.markdown("""
+        <div class="tool-card">
+            <div class="icon">📂</div>
+            <h3>Account Splitter</h3>
+            <p>Upload a SAP extract containing multiple customer accounts.
+               Splits into separate sheets, removes invoices not yet due,
+               and applies custom templates per customer.</p>
+            <div class="feat">One sheet per customer in a single workbook</div>
+            <div class="feat">Auto-removes invoices not yet due</div>
+            <div class="feat">Custom Excel templates per customer account</div>
+            <div class="feat">Summary tab with totals per account</div>
+            <div class="feat">Draft payment reminder email per account (EN/NL/FR)</div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.write("")
+        if st.button("Open Account Splitter →", use_container_width=True, key="btn_spl"):
+            st.session_state["active_page"] = "📂  Account Splitter"
+            st.rerun()
