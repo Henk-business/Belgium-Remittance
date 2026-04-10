@@ -83,12 +83,12 @@ def show():
     with s1:
         year_from = st.number_input(
             "From year", min_value=2000, max_value=2099,
-            value=yr_min, step=1, key="ov_from",
+            value=yr_min, step=1, key="ov_from_input",
         )
     with s2:
         year_to = st.number_input(
             "To year", min_value=2000, max_value=2099,
-            value=yr_max, step=1, key="ov_to",
+            value=yr_max, step=1, key="ov_to_input",
         )
     with s3:
         customer_name = st.text_input(
@@ -157,12 +157,13 @@ def show():
                 st.session_state["ov_to"]      = int(year_to)
                 st.session_state["ov_cname"]   = customer_name.strip()
                 st.session_state["ov_nrows"]   = len(work_df)
+                st.session_state["ov_ready"]   = True
             except Exception as e:
                 st.error(f"Error: {e}")
                 with st.expander("Detail"):
                     st.code(traceback.format_exc())
 
-    if "ov_result" not in st.session_state:
+    if not st.session_state.get("ov_ready") or "ov_result" not in st.session_state:
         return
 
     # ── RESULT ────────────────────────────────────────────────────────────────
@@ -171,7 +172,7 @@ def show():
     from_yr  = st.session_state["ov_from"]
     to_yr    = st.session_state["ov_to"]
     cname    = st.session_state["ov_cname"]
-    nrows    = st.session_state["ov_nrows"]
+    nrows    = st.session_state.get("ov_nrows", 0)
 
     st.markdown("---")
     st.success(
