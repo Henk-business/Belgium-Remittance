@@ -251,8 +251,8 @@ def build_chunked_sheet(acc_df: pd.DataFrame, account_id: str,
                     cell_val = val
 
                 c = ws.cell(row=r, column=ci, value=cell_val)
-                fg = (GREEN_FG if is_amt and isinstance(cell_val,(int,float)) and cell_val >= 0
-                      else RED_FG if is_amt and isinstance(cell_val,(int,float)) and cell_val < 0
+                fg = (RED_FG   if is_amt and isinstance(cell_val,(int,float)) and cell_val >= 0
+                      else GREEN_FG if is_amt and isinstance(cell_val,(int,float)) and cell_val < 0
                       else "000000")
                 c.font      = Font(name="Arial", size=9, color=fg)
                 c.fill      = PatternFill("solid", fgColor=row_bg)

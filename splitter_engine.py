@@ -182,8 +182,8 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
 
         for ci, val in enumerate([acc, n, total, n_open, tab_name], 1):
             cell = ws_sum.cell(row=r, column=ci, value=val)
-            fg_col = "166534" if ci == 3 and isinstance(val, float) and val >= 0 else \
-                     "B91C1C" if ci == 3 and isinstance(val, float) and val < 0 else \
+            fg_col = "C00000" if ci == 3 and isinstance(val, float) and val >= 0 else \
+                     "375623" if ci == 3 and isinstance(val, float) and val < 0 else \
                      "1D4ED8" if ci == 5 else "000000"
             cell.font  = Font(name="Arial", bold=(ci == 1), size=10, color=fg_col)
             cell.fill  = PatternFill("solid", fgColor=BG.get(bg, "FFFFFF"))
