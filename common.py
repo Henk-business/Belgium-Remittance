@@ -238,5 +238,7 @@ def get_email(template_key, lang, **kwargs):
 
 def mailto_link(to, subject, body):
     import urllib.parse
-    params = urllib.parse.urlencode({"subject": subject, "body": body})
-    return f"mailto:{to}?{params}"
+    # Use quote() with safe='' so spaces become %20 not + signs
+    s = urllib.parse.quote(subject, safe='')
+    b = urllib.parse.quote(body, safe='')
+    return f"mailto:{to}?subject={s}&body={b}"

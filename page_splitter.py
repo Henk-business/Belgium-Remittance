@@ -333,68 +333,111 @@ def show():
 
 
 def _template_manager():
-    """Persistent customer template manager — GitHub-backed if configured."""
-    st.markdown("### 🎨 Customer templates")
+    """Clean GitHub-backed template + rules manager."""
+
+    st.markdown("""
+    <style>
+    .tmpl-card {
+        background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;
+        padding: 16px 20px; margin-bottom: 10px;
+    }
+    .tmpl-card .acc  { font-size:15px; font-weight:700; color:#0f172a; }
+    .tmpl-card .meta { font-size:12px; color:#64748b; margin-top:2px; }
+    .tmpl-tag {
+        display:inline-block; background:#dbeafe; color:#1e40af;
+        font-size:11px; font-weight:600; padding:2px 8px;
+        border-radius:20px; margin-right:4px;
+    }
+    .tmpl-tag.poc  { background:#fce7f3; color:#9d174d; }
+    .tmpl-tag.rule { background:#d1fae5; color:#065f46; }
+    </style>
+    """, unsafe_allow_html=True)
 
     if not github_configured():
         _template_manager_session()
         return
 
-    st.caption(
-        "Templates are stored permanently in your GitHub repo and applied "
-        "automatically when a matching account number is detected."
-    )
-
-    with st.spinner("Loading templates from GitHub…"):
+    with st.spinner("Loading from GitHub…"):
         saved = list_github_templates()
 
+    # ── SAVED TEMPLATES ──────────────────────────────────────────────────────
     if saved:
-        st.markdown(f"**{len(saved)} template(s) stored in GitHub:**")
         for tmpl_info in saved:
             acc_id     = tmpl_info["account_id"]
             size_kb    = tmpl_info["size"] / 1024
             tmpl_bytes = get_template_cached(acc_id)
 
-            try:
-                info   = template_preview(tmpl_bytes) if tmpl_bytes else {}
-                detail = (
-                    f"{info.get('layout_type','?')}  ·  "
-                    f"{info.get('max_col','?')} cols  ·  "
-                    f"header row {info.get('header_row','?')}"
-                ) if info else f"{size_kb:.1f} KB"
-            except Exception:
-                detail = f"{size_kb:.1f} KB"
-
-            ca, cb, cc, cd = st.columns([3, 1, 1, 1])
-            with ca:
-                st.markdown(f"**Account {acc_id}** — {detail}")
-            with cb:
-                if tmpl_bytes:
-                    st.download_button(
-                        "⬇ View", data=tmpl_bytes,
-                        file_name=f"template_{acc_id}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"gh_dl_{acc_id}", use_container_width=True,
-                    )
-            with cc:
-                if st.button("🔄 Replace", key=f"gh_replace_{acc_id}", use_container_width=True):
-                    st.session_state[f"replacing_{acc_id}"] = True
-            with cd:
-                if st.button("🗑 Delete", key=f"gh_del_{acc_id}", use_container_width=True):
-                    with st.spinner(f"Deleting {acc_id}…"):
-                        ok, msg = delete_github_template(acc_id)
-                    if ok:
-                        invalidate_cache()
-                        st.success(msg)
-                        st.rerun()
+            # Detect type
+            layout_type = "Custom"
+            tag_class   = ""
+            if tmpl_bytes:
+                try:
+                    info = template_preview(tmpl_bytes)
+                    if info.get("layout_type") == "Plain table":
+                        layout_type = "Plain table"
                     else:
-                        st.error(msg)
+                        layout_type = "Custom layout"
+                    # Check if POC template
+                    import openpyxl, io as _io
+                    wb_check = openpyxl.load_workbook(_io.BytesIO(tmpl_bytes))
+                    ws_check = wb_check.active
+                    has_poc = any(
+                        str(ws_check.cell(r,1).value or "").startswith("29")
+                        for r in range(1, min(20, (ws_check.max_row or 20)+1))
+                    )
+                    if has_poc:
+                        layout_type = "POC grouped"
+                        tag_class   = "poc"
+                except Exception:
+                    pass
+
+            # Check if this account also has a rule
+            from github_storage import _repo as _gr_check
+            has_rule = bool(get_rule_cached(acc_id, _gr_check()) if rules_gh_ok() else None)
+
+            tags_html = f'<span class="tmpl-tag {tag_class}">{layout_type}</span>'
+            if has_rule:
+                tags_html += '<span class="tmpl-tag rule">✓ chunked</span>'
+
+            col_main, col_btns = st.columns([4, 2])
+            with col_main:
+                st.markdown(f"""
+                <div class="tmpl-card">
+                    <div class="acc">Account {acc_id}</div>
+                    <div class="meta">{tags_html}&nbsp;&nbsp;{size_kb:.1f} KB</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_btns:
+                st.write("")
+                b1, b2, b3 = st.columns(3)
+                with b1:
+                    if tmpl_bytes:
+                        st.download_button(
+                            "⬇", data=tmpl_bytes,
+                            file_name=f"template_{acc_id}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"gh_dl_{acc_id}", use_container_width=True,
+                            help="Download template",
+                        )
+                with b2:
+                    if st.button("🔄", key=f"gh_replace_{acc_id}",
+                                 use_container_width=True, help="Replace template"):
+                        st.session_state[f"replacing_{acc_id}"] = True
+                with b3:
+                    if st.button("🗑", key=f"gh_del_{acc_id}",
+                                 use_container_width=True, help="Delete template"):
+                        with st.spinner("Deleting…"):
+                            ok, msg = delete_github_template(acc_id)
+                        if ok:
+                            invalidate_cache()
+                            st.rerun()
+                        else:
+                            st.error(msg)
 
             if st.session_state.get(f"replacing_{acc_id}"):
                 rep_file = st.file_uploader(
-                    f"New template for {acc_id}",
-                    type=["xlsx", "xls"],
-                    key=f"gh_rep_file_{acc_id}",
+                    f"Upload new template for {acc_id}",
+                    type=["xlsx","xls"], key=f"gh_rep_file_{acc_id}",
                 )
                 if rep_file:
                     with st.spinner("Uploading…"):
@@ -402,102 +445,101 @@ def _template_manager():
                     if ok:
                         invalidate_cache()
                         del st.session_state[f"replacing_{acc_id}"]
-                        st.success(msg)
                         st.rerun()
                     else:
                         st.error(msg)
     else:
-        st.info("No templates saved yet. Upload one below.")
+        st.info("No templates saved yet. Upload one below to get started.")
 
+    st.write("")
+
+    # ── UPLOAD NEW ────────────────────────────────────────────────────────────
     with st.expander("➕  Upload a new customer template"):
-        st.caption(
-            "Supports plain tables (custom column headers) and full custom layouts "
-            "(merged cells, logos, branded headers). Upload the customer's actual Excel file."
-        )
-        acc_input = st.text_input(
-            "Customer account number", key="gh_tmpl_acc",
-            placeholder="e.g. 30113601",
-        )
-        new_file = st.file_uploader(
-            "Customer template (.xlsx)", type=["xlsx", "xls"], key="gh_tmpl_file",
-        )
-        if new_file:
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            acc_input = st.text_input(
+                "Account number", key="gh_tmpl_acc", placeholder="e.g. 30104552",
+            )
+        with c2:
+            new_file = st.file_uploader(
+                "Template file (.xlsx)", type=["xlsx","xls"], key="gh_tmpl_file",
+            )
+
+        if new_file and acc_input:
             raw = new_file.read()
             try:
                 info = template_preview(raw)
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Layout",     info["layout_type"])
-                c2.metric("Columns",    info["max_col"])
-                c3.metric("Header row", info["header_row"])
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Layout",     info["layout_type"])
+                m2.metric("Columns",    info["max_col"])
+                m3.metric("Header row", info["header_row"])
                 if info["headers"]:
-                    st.markdown(
-                        "**Detected headers:** " +
-                        "  ".join(f"`{h}`" for h in info["headers"][:8]) +
-                        ("…" if len(info["headers"]) > 8 else "")
-                    )
-            except Exception as e:
-                st.warning(f"Could not preview: {e}")
+                    st.caption("Columns: " + "  ·  ".join(info["headers"][:8]) +
+                               ("…" if len(info["headers"]) > 8 else ""))
+            except Exception:
+                pass
 
-            if not acc_input:
-                st.warning("Enter the account number above first.")
-            else:
-                if st.button(
-                    f"💾  Save template for account {acc_input} to GitHub",
-                    key="gh_tmpl_save", type="primary",
-                ):
-                    with st.spinner("Saving to GitHub…"):
-                        ok, msg = save_github_template(acc_input, raw)
-                    if ok:
-                        invalidate_cache()
-                        st.success(msg + " Applied automatically next time you split.")
-                        st.rerun()
-                    else:
-                        st.error(msg)
+            if st.button(
+                f"💾  Save template for account {acc_input}",
+                key="gh_tmpl_save", type="primary", use_container_width=True,
+            ):
+                with st.spinner("Saving to GitHub…"):
+                    ok, msg = save_github_template(acc_input, raw)
+                if ok:
+                    invalidate_cache()
+                    st.success(f"Template saved for account {acc_input}.")
+                    st.rerun()
+                else:
+                    st.error(msg)
+        elif new_file and not acc_input:
+            st.warning("Enter the account number first.")
 
-
-    # ── CUSTOM RULES EDITOR ───────────────────────────────────────────────────
-    with st.expander("\u2699\ufe0f  Custom output rules per customer"):
+    # ── CUSTOM RULES ──────────────────────────────────────────────────────────
+    with st.expander("⚙️  Chunking rules per account"):
         st.caption(
-            "Define how a customer sheet is structured: column order, "
-            "grouping into payment batches, and grand total position. "
-            "Rules are stored permanently in GitHub."
+            "Set a chunk size to group invoices into payment batches "
+            "(e.g. €40,000 each). Rules are saved permanently to GitHub."
         )
+
         rule_acc = st.text_input(
-            "Account number to configure",
-            key="rule_acc_input", placeholder="e.g. 30111788",
+            "Account number", key="rule_acc_input", placeholder="e.g. 30111788",
         )
+
         if rule_acc:
             from github_storage import _repo as _gr2
             existing = get_rule_cached(rule_acc, _gr2()) if rules_gh_ok() else None
             base = existing or DEFAULT_RULE.copy()
-            if existing:
-                st.success("This account already has saved rules.")
-            chunk_size = st.number_input(
-                "Chunk size (\u20ac) - group rows into batches. 0 = disabled.",
-                min_value=0.0, value=float(base.get("chunk_size", 0)),
-                step=1000.0, format="%.0f", key="rule_chunk",
-            )
-            show_account = st.checkbox(
-                "Include Account column",
-                value=base.get("show_account", True), key="rule_show_acc",
-            )
-            total_position = st.radio(
-                "Grand total position", ["bottom", "right"],
-                index=0 if base.get("total_position", "bottom") == "bottom" else 1,
-                key="rule_total_pos",
-                help="right = yellow box to the right of the data"
-            )
+
+            r1, r2 = st.columns(2)
+            with r1:
+                chunk_size = st.number_input(
+                    "Chunk size (€)", min_value=0.0,
+                    value=float(base.get("chunk_size", 0)),
+                    step=1000.0, format="%.0f", key="rule_chunk",
+                    help="0 = no chunking",
+                )
+                show_account = st.checkbox(
+                    "Include Account column",
+                    value=base.get("show_account", True), key="rule_show_acc",
+                )
+            with r2:
+                total_position = st.radio(
+                    "Grand total", ["bottom", "right"],
+                    index=0 if base.get("total_position","bottom") == "bottom" else 1,
+                    key="rule_total_pos",
+                )
+                sort_col = st.text_input(
+                    "Sort by column",
+                    value=(base.get("sort_by") or ["Net due date"])[0],
+                    key="rule_sort",
+                )
+
             cols_text = st.text_area(
-                "Column order (one per line - leave blank for default)",
+                "Column order (one per line, leave blank for default)",
                 value="\n".join(base.get("columns", [])),
-                height=140, key="rule_cols",
-                help="Exact SAP column names one per line in the order you want"
+                height=110, key="rule_cols",
             )
-            sort_col = st.text_input(
-                "Sort rows by this column before chunking",
-                value=(base.get("sort_by") or ["Net due date"])[0],
-                key="rule_sort",
-            )
+
             rule_obj = {
                 "chunk_size":     chunk_size,
                 "show_account":   show_account,
@@ -505,45 +547,36 @@ def _template_manager():
                 "columns":        [c.strip() for c in cols_text.strip().splitlines() if c.strip()],
                 "sort_by":        [sort_col] if sort_col.strip() else ["Net due date"],
             }
-            sc1, sc2, sc3 = st.columns(3)
-            with sc1:
-                if st.button(f"\U0001f4be  Save rules for {rule_acc}", key="rule_save", type="primary"):
-                    # Save to session state — this is what the download uses
+
+            rb1, rb2, rb3 = st.columns(3)
+            with rb1:
+                if st.button("💾  Save rule", key="rule_save",
+                             type="primary", use_container_width=True):
                     st.session_state[f"rule_{rule_acc}"] = rule_obj
-                    # Also try GitHub for persistence
-                    gh_msg = ""
                     try:
                         ok, msg = save_rule_github(rule_acc, rule_obj)
                         if ok:
                             invalidate_rule_cache()
-                            gh_msg = " + saved to GitHub (permanent)"
+                            st.success(f"Rule saved for account {rule_acc}.")
                         else:
-                            gh_msg = " (GitHub save failed — rule works this session only)"
+                            st.warning("Saved to session. GitHub: " + msg)
                     except Exception as e:
-                        gh_msg = f" (GitHub error: {e})"
-                    st.success(
-                        f"Rule active for account {rule_acc}!{gh_msg}\n"
-                        f"Chunk size: €{rule_obj.get('chunk_size',0):,.0f}  \u00b7  "
-                        f"Now run the split and download."
-                    )
+                        st.warning(f"Saved to session only. ({e})")
                     st.rerun()
-            with sc2:
-                if st.button(f"\U0001f50d  Verify saved rule", key="rule_verify"):
+            with rb2:
+                if st.button("🔍  Verify", key="rule_verify",
+                             use_container_width=True):
                     loaded = _load_rule_direct(rule_acc)
                     if loaded:
                         st.success(
-                            f"Rule found in GitHub for account {rule_acc}:\n"
-                            f"chunk_size={loaded.get('chunk_size',0)}  "
-                            f"columns={loaded.get('columns',[])}  "
-                            f"total_position={loaded.get('total_position','bottom')}"
+                            f"Rule found · chunk=€{loaded.get('chunk_size',0):,.0f}"
+                            f" · total={loaded.get('total_position','bottom')}"
                         )
                     else:
-                        st.error(
-                            f"No rule found in GitHub for account {rule_acc}. "
-                            "Save it first, or check the account number matches exactly."
-                        )
-            with sc3:
-                if existing and st.button(f"\U0001f5d1  Delete", key="rule_del"):
+                        st.error("No rule found in GitHub for this account.")
+            with rb3:
+                if existing and st.button("🗑  Delete", key="rule_del",
+                                          use_container_width=True):
                     ok, msg = delete_rule_github(rule_acc)
                     if ok:
                         invalidate_rule_cache()
