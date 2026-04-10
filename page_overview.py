@@ -92,7 +92,7 @@ def show():
         )
     with s3:
         customer_name = st.text_input(
-            "Customer name", key="ov_cname",
+            "Customer name", key="ov_cname_w",
             placeholder="e.g. ACME Corp",
         )
     with s4:
@@ -100,12 +100,12 @@ def show():
             account_filter = st.selectbox(
                 "Account",
                 ["All accounts"] + accounts,
-                key="ov_acc",
+                key="ov_acc_w",
             )
         else:
             account_filter = accounts[0] if accounts else "All accounts"
             st.text_input("Account", value=account_filter,
-                          key="ov_acc_disp", disabled=True)
+                          key="ov_acc_disp_w", disabled=True)
 
     if int(year_from) > int(year_to):
         st.error("'From year' must be before or equal to 'To year'.")
