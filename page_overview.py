@@ -79,7 +79,7 @@ def show():
     # ── SETTINGS ──────────────────────────────────────────────────────────────
     st.markdown("### 2 · Settings")
 
-    s1, s2, s3, s4 = st.columns(4)
+    s1, s2, s3, s4, s5 = st.columns(5)
     with s1:
         year_from = st.number_input(
             "From year", min_value=2000, max_value=2099,
@@ -91,11 +91,18 @@ def show():
             value=yr_max, step=1, key="ov_to_input",
         )
     with s3:
+        lang = st.selectbox(
+            "Language",
+            ["en", "nl", "fr"],
+            format_func=lambda x: {"en": "🇬🇧 English", "nl": "🇳🇱 Dutch", "fr": "🇫🇷 French"}[x],
+            key="ov_lang_w",
+        )
+    with s4:
         customer_name = st.text_input(
             "Customer name", key="ov_cname_w",
             placeholder="e.g. ACME Corp",
         )
-    with s4:
+    with s5:
         if len(accounts) > 1:
             account_filter = st.selectbox(
                 "Account",
@@ -150,6 +157,7 @@ def show():
                     customer_name=customer_name.strip(),
                     account_id=(account_filter
                                 if account_filter != "All accounts" else ""),
+                    lang=lang,
                 )
                 st.session_state["ov_result"]  = result
                 st.session_state["ov_acc"]     = account_filter
@@ -158,6 +166,7 @@ def show():
                 st.session_state["ov_cname"]   = customer_name.strip()
                 st.session_state["ov_nrows"]   = len(work_df)
                 st.session_state["ov_ready"]   = True
+                st.session_state["ov_lang"]    = lang
             except Exception as e:
                 st.error(f"Error: {e}")
                 with st.expander("Detail"):

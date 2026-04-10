@@ -68,3 +68,25 @@ def show():
         if st.button("Open Account Splitter →", use_container_width=True, key="btn_spl"):
             st.session_state["active_page"] = "📂  Account Splitter"
             st.rerun()
+
+    st.write("")
+    col3, col4 = st.columns(2)
+    with col3:
+        st.markdown("""
+        <div class="tool-card">
+            <div class="icon">📊</div>
+            <h3>Customer Overview</h3>
+            <p>Generate a year-by-year breakdown for a customer.
+               Each year shows all transactions, split by G/L account,
+               with carry-over payments linked to their original invoices.</p>
+            <div class="feat">All transactions grouped by year</div>
+            <div class="feat">G/L split per year (Beer vs Rent)</div>
+            <div class="feat">Invoices paid next year shown together with payment</div>
+            <div class="feat">Document types translated (Invoice, Credit note, Payment…)</div>
+            <div class="feat">English, Dutch and French output</div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.write("")
+        if st.button("Open Customer Overview →", use_container_width=True, key="btn_ov"):
+            st.session_state["active_page"] = "📊  Customer Overview"
+            st.rerun()

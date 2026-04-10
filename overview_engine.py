@@ -398,38 +398,62 @@ def build_overview(df: pd.DataFrame, amt_col: str,
 
         return r
 
+    # ── Pre-compute cross-year pairs ─────────────────────────────────────────
+    # Invoice in year Y paid in year Y+1 → pull BOTH into year Y+1 section.
+    # This prevents invoice showing in Y and payment in Y+1 as a duplicate.
+    pulled_indices = set()   # original invoice row indices pulled out of their year
+    pulled_into    = {}      # yr -> [extra DataFrames to prepend]
+
+    if doc_date_col and doc_num_col and assign_col and doc_type_col:
+        for yi in range(len(years)-1):
+            yr_pull  = years[yi]
+            next_yr  = years[yi+1]
+            s  = pd.Timestamp(yr_pull,1,1);  e  = pd.Timestamp(yr_pull,12,31,23,59,59)
+            ns = pd.Timestamp(next_yr,1,1);  ne = pd.Timestamp(next_yr,12,31,23,59,59)
+
+            yr_rows  = df[df[doc_date_col].notna() & (df[doc_date_col]>=s)  & (df[doc_date_col]<=e)]
+            nxt_rows = df[df[doc_date_col].notna() & (df[doc_date_col]>=ns) & (df[doc_date_col]<=ne)]
+
+            pay_types = {"ZP","DZ","AB"}
+            nxt_pays  = nxt_rows[nxt_rows[doc_type_col].astype(str).str.strip().str.upper().isin(pay_types)]
+            if len(nxt_pays) == 0:
+                continue
+
+            yr_doc_nums   = set(yr_rows[doc_num_col].astype(str).str.strip().tolist())
+            linked_pays   = nxt_pays[nxt_pays[assign_col].astype(str).str.strip().isin(yr_doc_nums)]
+            if len(linked_pays) == 0:
+                continue
+
+            matched_nums  = set(linked_pays[assign_col].astype(str).str.strip().tolist())
+            orig_invoices = yr_rows[yr_rows[doc_num_col].astype(str).str.strip().isin(matched_nums)]
+
+            for idx in orig_invoices.index:
+                pulled_indices.add(idx)
+            # Also exclude the linked payments from base_df of next_yr
+            # since we add them explicitly via pulled_into
+            for idx in linked_pays.index:
+                pulled_indices.add(idx)
+            pulled_into.setdefault(next_yr, [])
+            pulled_into[next_yr].append(orig_invoices)
+            pulled_into[next_yr].append(linked_pays)
+
     # ── Year sections ─────────────────────────────────────────────────────────
     grand_total = 0.0
 
     for yr in years:
-        # Activity in this year
         if doc_date_col and doc_date_col in df.columns:
             s = pd.Timestamp(yr,1,1); e = pd.Timestamp(yr,12,31,23,59,59)
-            yr_df = df[df[doc_date_col].notna() &
-                       (df[doc_date_col]>=s) & (df[doc_date_col]<=e)].copy()
+            base_df = df[df[doc_date_col].notna() &
+                         (df[doc_date_col]>=s) & (df[doc_date_col]<=e)].copy()
         else:
-            yr_df = df.copy()
+            base_df = df.copy()
 
-        # Carry-over: payments in yr+1 whose Assignment matches a document from yr
-        carryover_df = pd.DataFrame()
-        if yr < years[-1] and doc_date_col in df.columns and assign_col and doc_num_col:
-            ns = pd.Timestamp(yr+1,1,1); ne = pd.Timestamp(yr+1,12,31,23,59,59)
-            next_df = df[df[doc_date_col].notna() &
-                         (df[doc_date_col]>=ns) & (df[doc_date_col]<=ne)].copy()
-            pay_mask = next_df[doc_type_col].astype(str).str.strip().str.upper() \
-                           .isin({"ZP","DZ","AB"}) if doc_type_col else pd.Series(False,index=next_df.index)
-            next_pays = next_df[pay_mask]
-            if len(next_pays) > 0:
-                yr_doc_nums = set(yr_df[doc_num_col].astype(str).str.strip().tolist())
-                linked = next_pays[
-                    next_pays[assign_col].astype(str).str.strip().isin(yr_doc_nums)
-                ]
-                if len(linked) > 0:
-                    carryover_df = linked
+        # Remove invoices pulled into a later year
+        base_df = base_df[~base_df.index.isin(pulled_indices)].copy()
 
-        # Combine: year activity + carry-over payments (both shown in this year section)
-        combined_df = pd.concat([yr_df, carryover_df], ignore_index=True) \
-                      if len(carryover_df) > 0 else yr_df
+        # Add invoices+payments pulled INTO this year from previous year
+        extras = pulled_into.get(yr, [])
+        combined_df = pd.concat([base_df]+extras, ignore_index=True) if extras else base_df
 
         yr_total  = combined_df[amt_col].sum() if amt_col and amt_col in combined_df.columns else 0
         yr_inv    = combined_df[combined_df[amt_col]>0][amt_col].sum() if amt_col and amt_col in combined_df.columns else 0
