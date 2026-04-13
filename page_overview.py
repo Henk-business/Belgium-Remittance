@@ -147,12 +147,29 @@ def show():
     if generate:
         work_df = df.copy()
 
-        # Filter to selected account
+        # Filter to selected account — must keep blank separator rows intact
         if account_filter != "All accounts" and acc_col:
-            work_df = work_df[
-                work_df[acc_col].astype(str).str.strip().str.split(".").str[0]
-                == str(account_filter)
-            ].copy()
+            # Mark which real rows belong to this account
+            acc_str = work_df[acc_col].astype(str).str.strip().str.split(".").str[0]
+            is_real  = acc_str.isin([str(account_filter)])
+            is_blank = acc_str.isin(["", "nan", "None"]) | work_df[acc_col].isna()
+
+            # Walk through rows: keep a blank row only if it immediately follows
+            # real rows that belonged to this account
+            keep = []
+            last_real_kept = False
+            for idx in work_df.index:
+                if is_real[idx]:
+                    keep.append(idx)
+                    last_real_kept = True
+                elif is_blank[idx]:
+                    if last_real_kept:
+                        keep.append(idx)
+                    last_real_kept = False
+                else:
+                    last_real_kept = False
+
+            work_df = work_df.loc[keep].copy()
 
         if work_df[acc_col].notna().sum() == 0 if acc_col else len(work_df) == 0:
             st.error("No data found for the selected account.")

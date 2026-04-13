@@ -483,11 +483,7 @@ def build_overview(df: pd.DataFrame, amt_col: str,
                 # Blank gap between groups
                 ws.row_dimensions[r].height = 5; r += 1
 
-            # G/L subtotal (only if multiple GL sections)
-            if multi_gl:
-                subtotal_row(_t(lang, "gl_subtotal", lbl=gl_title),
-                             sec_total, LT_BLUE, fg_label=DK_BLUE)
-                ws.row_dimensions[r].height = 5; r += 1
+            # No G/L subtotals — groups already have their own subtotals
 
         # Year total
         subtotal_row(_t(lang, "year_total", yr=yr), yr_net, DK_BLUE, size=10)
