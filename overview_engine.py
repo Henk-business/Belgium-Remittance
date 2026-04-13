@@ -358,6 +358,10 @@ def build_overview(df: pd.DataFrame, amt_col: str,
                 fg = BLACK_FG
             elif pd.isna(row_data[col]):
                 val, fg = "", BLACK_FG
+            elif gl_col and col == gl_col:
+                raw = str(row_data[col]).strip().split(".")[0]
+                lbl = _gl_lbl(raw, lang)
+                val, fg = (f"{raw} — {lbl}" if lbl else raw), BLACK_FG
             elif isinstance(row_data[col], float) and row_data[col] == int(row_data[col]):
                 val, fg = int(row_data[col]), BLACK_FG
             else:
