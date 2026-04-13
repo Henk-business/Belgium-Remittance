@@ -157,9 +157,18 @@ def show():
                         remove_not_due=remove_not_due,
                         reference_date=ref_date,
                     )
-                    # Build the combined workbook — standard layout for all accounts.
-                    # Templated accounts get their own individual sheets in the email section.
-                    wb_bytes = build_split_workbook(account_data, amount_col, today=ref_date)
+                    # Build the combined workbook — load templates so templated
+                    # accounts get their proper layout in the combined file too.
+                    _tmpl_map = {}
+                    for _acc in account_data.keys():
+                        try:
+                            _tb = get_template_cached(str(_acc)) if github_configured()                                   else _sess_get(st.session_state, str(_acc))
+                            if _tb:
+                                _tmpl_map[str(_acc)] = _tb
+                        except Exception:
+                            pass
+                    wb_bytes = build_split_workbook(account_data, amount_col,
+                                                    today=ref_date, templates=_tmpl_map)
                     st.session_state["spl_result"]       = wb_bytes
                     st.session_state["spl_account_data"] = account_data
                     st.session_state["spl_ref_date"]     = ref_date
