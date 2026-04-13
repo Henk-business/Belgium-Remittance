@@ -11,37 +11,45 @@ def show():
     st.markdown("## 📊 Customer Overview")
     st.caption(
         "Generate a year-by-year breakdown for a customer. "
-        "Each year appears as its own section showing all transactions "
-        "that occurred during that year, with a subtotal per year and a grand total."
+        "Each year shows all clearing groups with their transactions, "
+        "sorted newest to oldest by net due date."
     )
 
     # ── UPLOAD ────────────────────────────────────────────────────────────────
     st.markdown("### 1 · Upload SAP export")
-    st.markdown("**SAP Export** — FBL5N full history for this customer (.xlsx)")
     uploaded = st.file_uploader(
-        "SAP file", type=["xlsx", "xls"],
-        label_visibility="collapsed", key="ov_file",
+        "SAP Export — FBL5N full history (.xlsx)",
+        type=["xlsx","xls"],
+        label_visibility="collapsed",
+        key="ov_file",
     )
 
     if not uploaded:
         st.info(
-            "Export from SAP (FBL5N) the full transaction history for the customer, "
-            "covering all years you need. The tool groups transactions by document date "
-            "into yearly sections automatically."
+            "Export the full transaction history from SAP (FBL5N) for this customer. "
+            "Include all years you need. The tool uses the SAP grouping structure directly."
         )
         return
 
-    # ── PARSE ─────────────────────────────────────────────────────────────────
-    try:
-        file_bytes = uploaded.read()
-        df, amt_col = prepare_df(BytesIO(file_bytes))
-    except Exception as e:
-        st.error(f"Could not read file: {e}")
-        with st.expander("Detail"):
-            st.code(traceback.format_exc())
-        return
+    # ── PARSE FILE — cache in session to survive reruns ───────────────────────
+    file_key = f"ov_df_{uploaded.name}_{uploaded.size}"
+    if file_key not in st.session_state:
+        try:
+            raw_bytes = uploaded.read()
+            df, amt_col = prepare_df(BytesIO(raw_bytes))
+            st.session_state[file_key]          = df
+            st.session_state[file_key+"_amt"]   = amt_col
+            st.session_state[file_key+"_bytes"] = raw_bytes
+        except Exception as e:
+            st.error(f"Could not read file: {e}")
+            with st.expander("Detail"):
+                st.code(traceback.format_exc())
+            return
 
-    # Detect accounts
+    df      = st.session_state[file_key]
+    amt_col = st.session_state[file_key+"_amt"]
+
+    # Detect accounts (from real rows only)
     acc_col = next(
         (c for c in df.columns
          if c.lower() in ("account","customer","debitor","debiteurnummer",
@@ -49,31 +57,34 @@ def show():
     )
     accounts = []
     if acc_col:
-        accounts = sorted([
+        accounts = sorted(set(
             str(a).strip().split(".")[0]
-            for a in df[acc_col].dropna().unique()
-            if str(a).strip() not in ("","nan")
-        ])
+            for a in df[acc_col].dropna()
+            if str(a).strip() not in ("","nan","None")
+        ))
 
-    # Detect year range from document dates
-    doc_date_col = next(
-        (c for c in df.columns
-         if "document date" in c.lower()
-         or "belegdatum" in c.lower()
-         or "boekingsdatum" in c.lower()), None
+    # Detect year range from net due date (preferred) or doc date
+    net_due_col = next(
+        (c for c in df.columns if "net due" in c.lower()
+         or "vervaldatum" in c.lower()), None
     )
-    if doc_date_col and doc_date_col in df.columns:
-        valid = df[doc_date_col].dropna()
+    date_col_for_range = net_due_col or next(
+        (c for c in df.columns if "document date" in c.lower()
+         or "belegdatum" in c.lower()), None
+    )
+    if date_col_for_range and date_col_for_range in df.columns:
+        valid = df[date_col_for_range].dropna()
         yr_min = int(valid.min().year) if len(valid) else datetime.date.today().year - 5
         yr_max = int(valid.max().year) if len(valid) else datetime.date.today().year
     else:
         yr_min = datetime.date.today().year - 5
         yr_max = datetime.date.today().year
 
+    n_real = df[acc_col].notna().sum() if acc_col else len(df)
     st.success(
-        f"File loaded — {len(df):,} rows  ·  "
+        f"✓ File loaded — {n_real:,} transactions  ·  "
         f"{len(accounts)} account(s)  ·  "
-        f"Dates: {yr_min}–{yr_max}"
+        f"Detected range: {yr_min}–{yr_max}"
     )
 
     # ── SETTINGS ──────────────────────────────────────────────────────────────
@@ -92,9 +103,8 @@ def show():
         )
     with s3:
         lang = st.selectbox(
-            "Language",
-            ["en", "nl", "fr"],
-            format_func=lambda x: {"en": "🇬🇧 English", "nl": "🇳🇱 Dutch", "fr": "🇫🇷 French"}[x],
+            "Language", ["en","nl","fr"],
+            format_func=lambda x: {"en":"🇬🇧 English","nl":"🇳🇱 Dutch","fr":"🇫🇷 French"}[x],
             key="ov_lang_w",
         )
     with s4:
@@ -105,8 +115,7 @@ def show():
     with s5:
         if len(accounts) > 1:
             account_filter = st.selectbox(
-                "Account",
-                ["All accounts"] + accounts,
+                "Account", ["All accounts"] + accounts,
                 key="ov_acc_w",
             )
         else:
@@ -114,15 +123,15 @@ def show():
             st.text_input("Account", value=account_filter,
                           key="ov_acc_disp_w", disabled=True)
 
-    if int(year_from) > int(year_to):
+    year_from = int(year_from)
+    year_to   = int(year_to)
+
+    if year_from > year_to:
         st.error("'From year' must be before or equal to 'To year'.")
         return
 
-    n_years = int(year_to) - int(year_from) + 1
-    st.caption(
-        f"Will generate {n_years} year section(s) on one sheet — "
-        "all transactions grouped by document date."
-    )
+    n_years = year_to - year_from + 1
+    st.caption(f"Will generate {n_years} year section(s) on one sheet.")
 
     # ── GENERATE ──────────────────────────────────────────────────────────────
     st.markdown("### 3 · Generate")
@@ -145,7 +154,7 @@ def show():
                 == str(account_filter)
             ].copy()
 
-        if len(work_df) == 0:
+        if work_df[acc_col].notna().sum() == 0 if acc_col else len(work_df) == 0:
             st.error("No data found for the selected account.")
             return
 
@@ -153,18 +162,17 @@ def show():
             try:
                 result = build_overview(
                     work_df, amt_col,
-                    int(year_from), int(year_to),
+                    year_from, year_to,
                     customer_name=customer_name.strip(),
-                    account_id=(account_filter
-                                if account_filter != "All accounts" else ""),
+                    account_id=(account_filter if account_filter != "All accounts" else ""),
                     lang=lang,
                 )
                 st.session_state["ov_result"]  = result
                 st.session_state["ov_acc"]     = account_filter
-                st.session_state["ov_from"]    = int(year_from)
-                st.session_state["ov_to"]      = int(year_to)
+                st.session_state["ov_from"]    = year_from
+                st.session_state["ov_to"]      = year_to
                 st.session_state["ov_cname"]   = customer_name.strip()
-                st.session_state["ov_nrows"]   = len(work_df)
+                st.session_state["ov_nrows"]   = n_real
                 st.session_state["ov_ready"]   = True
                 st.session_state["ov_lang"]    = lang
             except Exception as e:
@@ -181,19 +189,13 @@ def show():
     from_yr  = st.session_state["ov_from"]
     to_yr    = st.session_state["ov_to"]
     cname    = st.session_state["ov_cname"]
-    nrows    = st.session_state.get("ov_nrows", 0)
 
     st.markdown("---")
-    st.success(
-        f"Done — {to_yr - from_yr + 1} year sections  ·  {nrows:,} transactions total"
-    )
+    st.success(f"Done — {to_yr - from_yr + 1} year section(s)")
 
-    # Build filename
     parts = []
-    if cname:
-        parts.append(cname.replace(" ", "_")[:20])
-    if acc_lbl != "All accounts":
-        parts.append(str(acc_lbl))
+    if cname: parts.append(cname.replace(" ","_")[:20])
+    if acc_lbl != "All accounts": parts.append(str(acc_lbl))
     parts.append(f"{from_yr}-{to_yr}")
     filename = "Overview_" + "_".join(parts) + ".xlsx"
 
