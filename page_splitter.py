@@ -6,7 +6,7 @@ import traceback
 
 from splitter_engine import (
     split_accounts, build_split_workbook, build_template_sheet,
-    build_individual_sheet, CHUNKED_ACCOUNTS,
+    build_individual_sheet, CHUNKED_ACCOUNTS, translate_doc_types,
 )
 from template_manager import template_preview
 from template_manager import (
@@ -213,10 +213,23 @@ def show():
         use_container_width=True, key="spl_dl_all",
     )
 
+    # Language selector for document type translation
+    dl_l, dl_r = st.columns([1, 3])
+    with dl_l:
+        dl_lang = st.selectbox(
+            "Document language",
+            ["en", "nl", "fr"],
+            format_func=lambda x: {"en": "🇬🇧 English", "nl": "🇳🇱 Dutch", "fr": "🇫🇷 French"}[x],
+            key="spl_dl_lang",
+            help="Translates Document Type column: Invoice, Credit note, Payment, etc.",
+        )
     st.markdown("**Individual downloads (with custom rules/templates applied):**")
 
     for acc, acc_df_sel in account_data.items():
         total_sel = acc_df_sel[amount_col].sum() if amount_col and amount_col in acc_df_sel.columns else 0
+
+        # Apply document type translation
+        acc_df_sel = translate_doc_types(acc_df_sel, dl_lang)
 
         # Priority: 1) chunked rule  2) POC template  3) plain template  4) standard
         # Load template and rule first so we pick the right builder

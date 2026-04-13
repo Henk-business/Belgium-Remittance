@@ -11,6 +11,49 @@ warnings.filterwarnings("ignore")
 from common import BG, FG, c, mr, col_w, hdr_row, fd, auto_widths, clean_id
 from template_manager import apply_template
 
+# ── DOCUMENT TYPE TRANSLATION ─────────────────────────────────────────────────
+_DOC_LABELS = {
+    "en": {"RV+":"Invoice","RV-":"Credit note","ZP":"Payment","DZ":"Payment",
+           "RS+":"Re-invoice (bonus correction)","RS-":"Bonus",
+           "AB":"Clearing","X_PAY":"Payout to customer"},
+    "nl": {"RV+":"Factuur","RV-":"Creditnota","ZP":"Betaling","DZ":"Betaling",
+           "RS+":"Refactuur (bonuscorrectie)","RS-":"Bonus",
+           "AB":"Verrekening","X_PAY":"Uitbetaling aan klant"},
+    "fr": {"RV+":"Facture","RV-":"Avoir","ZP":"Paiement","DZ":"Paiement",
+           "RS+":"Re-facturation (correction bonus)","RS-":"Bonus",
+           "AB":"Compensation","X_PAY":"Paiement au client"},
+}
+
+def translate_doc_types(df: "pd.DataFrame", lang: str = "en") -> "pd.DataFrame":
+    """
+    Replace Document Type column values with human-readable descriptions.
+    Uses the same logic as the Customer Overview.
+    Returns a copy of df with the column values replaced.
+    """
+    import pandas as _pd
+    doc_type_col = next((c for c in df.columns if "document type" in c.lower()
+                         or "belegtyp" in c.lower()), None)
+    amt_col      = next((c for c in df.columns if "amount" in c.lower()
+                         or "bedrag" in c.lower()), None)
+    pay_col      = next((c for c in df.columns if "payment method" in c.lower()), None)
+    if not doc_type_col:
+        return df
+    df = df.copy()
+    labels = _DOC_LABELS.get(lang, _DOC_LABELS["en"])
+    def _lbl(row):
+        dt  = str(row.get(doc_type_col,"") or "").strip().upper()
+        amt = float(row.get(amt_col, 0) or 0) if amt_col else 0
+        pm  = str(row.get(pay_col,"") or "").strip().upper() if pay_col else ""
+        if pm == "X":        return labels["X_PAY"]
+        if dt == "RV":       return labels["RV+"] if amt >= 0 else labels["RV-"]
+        if dt in ("ZP","DZ"):return labels["ZP"]
+        if dt == "RS":       return labels["RS+"] if amt >= 0 else labels["RS-"]
+        if dt == "AB":       return labels["AB"]
+        return labels.get(dt, dt)
+    df[doc_type_col] = df.apply(_lbl, axis=1)
+    return df
+
+
 CUSTOMER_CONFIG_KEY = "customer_configs"
 
 # ── CHUNKED ACCOUNTS ──────────────────────────────────────────────────────────
