@@ -256,14 +256,58 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
     for idx, (acc, acc_df) in enumerate(account_data.items()):
         tab_name = _safe_tab(str(acc), idx)
 
-        # Chunked accounts and template accounts get their own individual
-        # workbooks via build_individual_sheet() — they are included in the
-        # summary but the sheet in the combined workbook is just a placeholder.
-        if str(acc) in CHUNKED_ACCOUNTS or (templates and str(acc) in templates):
+        # Chunked accounts get a placeholder (too complex for combined workbook).
+        # Template accounts (including POC): write their actual data into the sheet.
+        if str(acc) in CHUNKED_ACCOUNTS:
             ws_ph = wb.create_sheet(title=tab_name)
             mr(ws_ph, 1, 1, 3,
                f"Account {acc} — see individual download below",
                bg="md_blue", fg="white", sz=10)
+            continue
+
+        if templates and str(acc) in templates:
+            # Try to write the template-based sheet into the combined workbook
+            try:
+                from poc_builder import build_poc_sheet, _load_poc_names
+                import io as _io, openpyxl as _oxl
+                tmpl_b = templates[str(acc)]
+                # Detect POC template
+                _twb  = _oxl.load_workbook(_io.BytesIO(tmpl_b))
+                _tws  = _twb.active
+                _maxr = min((_tws.max_row or 20), 20)
+                is_poc = any(
+                    str(_tws.cell(r, 1).value or '').strip().startswith('29')
+                    for r in range(1, _maxr + 1)
+                )
+                if is_poc:
+                    sheet_bytes = build_poc_sheet(acc_df, str(acc), tmpl_b, today=today)
+                else:
+                    sheet_bytes = build_template_sheet(str(acc), acc_df, tmpl_b,
+                                                       amount_col, today=today)
+                # Copy the first sheet from the result into our combined workbook
+                src_wb = _oxl.load_workbook(_io.BytesIO(sheet_bytes))
+                src_ws = src_wb.active
+                dst_ws = wb.create_sheet(title=tab_name)
+                for row in src_ws.iter_rows():
+                    for cell in row:
+                        dst = dst_ws.cell(row=cell.row, column=cell.column, value=cell.value)
+                        if cell.has_style:
+                            from copy import copy as _copy
+                            dst.font      = _copy(cell.font)
+                            dst.fill      = _copy(cell.fill)
+                            dst.border    = _copy(cell.border)
+                            dst.alignment = _copy(cell.alignment)
+                            dst.number_format = cell.number_format
+                for i in range(1, src_ws.max_column + 1):
+                    ltr = __import__("openpyxl").utils.get_column_letter(i)
+                    dst_ws.column_dimensions[ltr].width =                         src_ws.column_dimensions[ltr].width
+                for r_idx in range(1, src_ws.max_row + 1):
+                    dst_ws.row_dimensions[r_idx].height =                         src_ws.row_dimensions[r_idx].height
+            except Exception:
+                ws_ph = wb.create_sheet(title=tab_name)
+                mr(ws_ph, 1, 1, 3,
+                   f"Account {acc} — see individual download below",
+                   bg="md_blue", fg="white", sz=10)
             continue
 
         ws = wb.create_sheet(title=tab_name)

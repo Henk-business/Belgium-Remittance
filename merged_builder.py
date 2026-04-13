@@ -218,7 +218,6 @@ def _write_account_sheet(wb, ws, acc_id: str, acc_df: pd.DataFrame,
 
     # ── Total row at the bottom ───────────────────────────────────────────────
     total_row = header_row + 1 + len(acc_df)
-    fg_total  = "FFC00000" if acc_total >= 0 else "FF375623"
     for ci in range(1, ncols + 1):
         cell = ws.cell(row=total_row, column=ci)
         cell.fill   = _fill(DK_BLUE)
@@ -229,7 +228,7 @@ def _write_account_sheet(wb, ws, acc_id: str, acc_df: pd.DataFrame,
             cell.alignment = _align("left")
         elif ci == amt_ci:
             cell.value          = acc_total
-            cell.font           = _font(bold=True, color=fg_total, size=10)
+            cell.font           = _font(bold=True, color=WHITE, size=10)
             cell.alignment      = _align("right")
             cell.number_format  = "#,##0.00"
         else:
