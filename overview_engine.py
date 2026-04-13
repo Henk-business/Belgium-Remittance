@@ -388,9 +388,7 @@ def build_overview(df: pd.DataFrame, amt_col: str,
                 _w(ws, r, ci, label, bold=True, bg=bg, fg=fg_label, size=size)
             elif ci == amt_ci:
                 c2 = ws.cell(row=r, column=ci, value=total)
-                c2.font = _font(bold=True,
-                                color=POS_FG if total >= 0 else NEG_FG,
-                                size=size)
+                c2.font = _font(bold=True, color=WHITE, size=size)
                 c2.fill = _fill(bg); c2.alignment = _align("right")
                 c2.number_format = "#,##0.00"; c2.border = _thin()
             else:
@@ -511,9 +509,7 @@ def build_overview(df: pd.DataFrame, amt_col: str,
                bold=True, bg=DK_BLUE, fg=WHITE, size=11)
         elif ci == amt_ci:
             c2 = ws.cell(row=r, column=ci, value=grand_total)
-            c2.font = _font(bold=True,
-                            color=POS_FG if grand_total >= 0 else NEG_FG,
-                            size=13)
+            c2.font = _font(bold=True, color=WHITE, size=13)
             c2.fill = _fill(DK_BLUE); c2.alignment = _align("right")
             c2.number_format = "#,##0.00"; c2.border = _thin()
         else:
