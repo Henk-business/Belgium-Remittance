@@ -190,73 +190,99 @@ def invalidate_cache():
     """Call after saving/deleting to force fresh download next time."""
     _cached_template.clear()
 
+
 # ── ACCOUNT GROUPS ─────────────────────────────────────────────────────────────
-# Groups stored as templates/group_<primary>.json
+# Stored as templates/group_<primary>.json
 # {"accounts": ["30172457", "30521289"], "label": "North and South Beverages"}
 
+def _group_api(primary_id: str) -> str:
+    return _api(f"templates/group_{primary_id}.json")
+
+
+def _get_group_sha(primary_id: str) -> Optional[str]:
+    resp = requests.get(_group_api(primary_id), headers=_headers(), timeout=10)
+    if resp.ok:
+        return resp.json().get("sha")
+    return None
+
+
 def save_account_group(primary_id: str, accounts: list, label: str = "") -> tuple:
-    """Save an account group definition to GitHub."""
+    """Save an account group definition to GitHub as JSON."""
+    if not github_configured():
+        return False, "GitHub not configured."
     import json
-    repo = _repo()
-    if not repo:
-        return False, "GitHub not configured"
-    filename = f"templates/group_{primary_id}.json"
-    content  = json.dumps({"accounts": accounts, "label": label}, indent=2)
+    content_str = json.dumps({"accounts": accounts, "label": label}, indent=2)
+    content_b64 = base64.b64encode(content_str.encode()).decode()
+    sha     = _get_group_sha(primary_id)
+    payload = {
+        "message": f"Save account group {primary_id}",
+        "content": content_b64,
+    }
+    if sha:
+        payload["sha"] = sha
+    resp = requests.put(
+        _group_api(primary_id),
+        headers={**_headers(), "Content-Type": "application/json"},
+        json=payload, timeout=20,
+    )
+    if resp.status_code in (200, 201):
+        return True, f"Group saved: {', '.join(accounts)}"
     try:
-        try:
-            existing = repo.get_contents(filename)
-            repo.update_file(filename, f"Update group {primary_id}",
-                             content, existing.sha)
-        except Exception:
-            repo.create_file(filename, f"Add group {primary_id}", content)
-        return True, f"Group saved for {', '.join(accounts)}"
-    except Exception as e:
-        return False, str(e)
+        msg = resp.json().get("message", resp.text)
+    except Exception:
+        msg = resp.text
+    return False, f"GitHub error {resp.status_code}: {msg}"
 
 
 def load_account_group(primary_id: str) -> dict | None:
     """Load an account group definition from GitHub."""
+    if not github_configured():
+        return None
     import json
-    repo = _repo()
-    if not repo:
-        return None
-    try:
-        f = repo.get_contents(f"templates/group_{primary_id}.json")
-        return json.loads(f.decoded_content.decode())
-    except Exception:
-        return None
+    resp = requests.get(_group_api(primary_id), headers=_headers(), timeout=10)
+    if resp.ok:
+        try:
+            raw = base64.b64decode(resp.json().get("content","").replace("\n",""))
+            return json.loads(raw)
+        except Exception:
+            return None
+    return None
 
 
 def list_account_groups() -> list:
     """List all account group definitions stored in GitHub."""
-    import json
-    repo = _repo()
-    if not repo:
+    if not github_configured():
         return []
-    try:
-        contents = repo.get_contents("templates")
-        groups = []
-        for f in contents:
-            if f.name.startswith("group_") and f.name.endswith(".json"):
+    import json
+    resp = requests.get(_api("templates"), headers=_headers(), timeout=10)
+    if not resp.ok:
+        return []
+    groups = []
+    for f in resp.json():
+        if isinstance(f, dict) and f.get("name","").startswith("group_")                 and f.get("name","").endswith(".json"):
+            fr = requests.get(f["url"], headers=_headers(), timeout=10)
+            if fr.ok:
                 try:
-                    data = json.loads(f.decoded_content.decode())
-                    groups.append(data)
+                    raw = base64.b64decode(fr.json().get("content","").replace("\n",""))
+                    groups.append(json.loads(raw))
                 except Exception:
                     pass
-        return groups
-    except Exception:
-        return []
+    return groups
 
 
 def delete_account_group(primary_id: str) -> tuple:
     """Delete an account group from GitHub."""
-    repo = _repo()
-    if not repo:
-        return False, "GitHub not configured"
-    try:
-        f = repo.get_contents(f"templates/group_{primary_id}.json")
-        repo.delete_file(f"templates/group_{primary_id}.json",
-                         f"Delete group {primary_id}", f.sha)
-        return True, f"Group {primary_id} deleted"
-    except Exception as e:
-        return False, str(e)
+    if not github_configured():
+        return False, "GitHub not configured."
+    sha = _get_group_sha(primary_id)
+    if not sha:
+        return False, f"Group {primary_id} not found."
+    payload = {"message": f"Delete group {primary_id}", "sha": sha}
+    resp = requests.delete(
+        _group_api(primary_id),
+        headers={**_headers(), "Content-Type": "application/json"},
+        json=payload, timeout=15,
+    )
+    if resp.ok:
+        return True, f"Group {primary_id} deleted."
+    return False, f"GitHub error {resp.status_code}: {resp.text}"
