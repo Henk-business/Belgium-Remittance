@@ -303,10 +303,11 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
                     dst_ws.column_dimensions[ltr].width =                         src_ws.column_dimensions[ltr].width
                 for r_idx in range(1, src_ws.max_row + 1):
                     dst_ws.row_dimensions[r_idx].height =                         src_ws.row_dimensions[r_idx].height
-            except Exception:
+            except Exception as _te:
+                # Log the error in the sheet itself for debugging
                 ws_ph = wb.create_sheet(title=tab_name)
-                mr(ws_ph, 1, 1, 3,
-                   f"Account {acc} — see individual download below",
+                mr(ws_ph, 1, 1, 5,
+                   f"Account {acc} — template error: {str(_te)[:80]}",
                    bg="md_blue", fg="white", sz=10)
             continue
 
