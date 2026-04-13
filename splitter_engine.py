@@ -292,9 +292,11 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
         if amount_col and amount_col in acc_df.columns:
             amount_ci = list(acc_df.columns).index(amount_col) + 1
 
-        # Identify date columns
+        # Identify date columns (exclude "Arrears" column which contains days, not dates)
         date_cols = set()
         for ci_chk, col_name in enumerate(acc_df.columns, 1):
+            if "arrears" in col_name.lower():
+                continue
             if any(kw in col_name.lower() for kw in ["date", "datum"]):
                 date_cols.add(ci_chk)
             elif pd.api.types.is_datetime64_any_dtype(acc_df[col_name]):

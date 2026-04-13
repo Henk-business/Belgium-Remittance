@@ -173,6 +173,9 @@ def prepare_df(file_obj):
     df.columns = [str(c).strip() for c in df.columns]
     for col in df.columns:
         if any(kw in col.lower() for kw in ["date", "datum"]):
+            # Skip "Arrears after net due date" — it contains numbers (days), not dates
+            if "arrears" in col.lower():
+                continue
             df[col] = pd.to_datetime(df[col], errors="coerce")
     amt_col = next((c for c in df.columns if "amount" in c.lower()
                     or "bedrag" in c.lower() or "betrag" in c.lower()), None)
