@@ -230,17 +230,23 @@ def show():
     st.markdown("---")
     st.markdown("### 📧 Email draft")
 
-    ov_lang = st.session_state.get("ov_lang", "en")
-    e1, e2, e3 = st.columns(3)
+    e1, e2, e3, e4 = st.columns(4)
     with e1:
-        sender  = st.text_input("Your name",  key="ov_sender",  placeholder="Your Name")
+        email_lang = st.selectbox(
+            "Email language",
+            ["en", "nl", "fr"],
+            format_func=lambda x: {"en": "🇬🇧 English", "nl": "🇳🇱 Dutch", "fr": "🇫🇷 French"}[x],
+            key="ov_email_lang",
+        )
     with e2:
-        company = st.text_input("Company",    key="ov_company", placeholder="Your Company")
+        sender  = st.text_input("Your name",  key="ov_sender",  placeholder="Your Name")
     with e3:
+        company = st.text_input("Company",    key="ov_company", placeholder="Your Company")
+    with e4:
         to_email = st.text_input("Customer email", key="ov_to_email", placeholder="customer@example.com")
 
     subject, body = get_email(
-        "overview", ov_lang,
+        "overview", email_lang,
         customer_name=cname or f"Account {acc_lbl}",
         account_id=acc_lbl if acc_lbl != "All accounts" else "",
         sender_name=sender or "[Your Name]",
