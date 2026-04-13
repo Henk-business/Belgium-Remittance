@@ -256,8 +256,7 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
     for idx, (acc, acc_df) in enumerate(account_data.items()):
         tab_name = _safe_tab(str(acc), idx)
 
-        # Chunked accounts get a placeholder (too complex for combined workbook).
-        # Template accounts (including POC): write their actual data into the sheet.
+        # Only chunked accounts get a placeholder — everything else renders inline.
         if str(acc) in CHUNKED_ACCOUNTS:
             ws_ph = wb.create_sheet(title=tab_name)
             mr(ws_ph, 1, 1, 3,
@@ -265,7 +264,7 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
                bg="md_blue", fg="white", sz=10)
             continue
 
-        if templates and str(acc) in templates:
+        if False and templates and str(acc) in templates:  # disabled — always render
             # Try to write the template-based sheet into the combined workbook
             try:
                 from poc_builder import build_poc_sheet, _load_poc_names
