@@ -189,3 +189,74 @@ def get_template_cached(account_id: str) -> Optional[bytes]:
 def invalidate_cache():
     """Call after saving/deleting to force fresh download next time."""
     _cached_template.clear()
+
+# ── ACCOUNT GROUPS ─────────────────────────────────────────────────────────────
+# Groups stored as templates/group_<primary>.json
+# {"accounts": ["30172457", "30521289"], "label": "North and South Beverages"}
+
+def save_account_group(primary_id: str, accounts: list, label: str = "") -> tuple:
+    """Save an account group definition to GitHub."""
+    import json
+    repo = _repo()
+    if not repo:
+        return False, "GitHub not configured"
+    filename = f"templates/group_{primary_id}.json"
+    content  = json.dumps({"accounts": accounts, "label": label}, indent=2)
+    try:
+        try:
+            existing = repo.get_contents(filename)
+            repo.update_file(filename, f"Update group {primary_id}",
+                             content, existing.sha)
+        except Exception:
+            repo.create_file(filename, f"Add group {primary_id}", content)
+        return True, f"Group saved for {', '.join(accounts)}"
+    except Exception as e:
+        return False, str(e)
+
+
+def load_account_group(primary_id: str) -> dict | None:
+    """Load an account group definition from GitHub."""
+    import json
+    repo = _repo()
+    if not repo:
+        return None
+    try:
+        f = repo.get_contents(f"templates/group_{primary_id}.json")
+        return json.loads(f.decoded_content.decode())
+    except Exception:
+        return None
+
+
+def list_account_groups() -> list:
+    """List all account group definitions stored in GitHub."""
+    import json
+    repo = _repo()
+    if not repo:
+        return []
+    try:
+        contents = repo.get_contents("templates")
+        groups = []
+        for f in contents:
+            if f.name.startswith("group_") and f.name.endswith(".json"):
+                try:
+                    data = json.loads(f.decoded_content.decode())
+                    groups.append(data)
+                except Exception:
+                    pass
+        return groups
+    except Exception:
+        return []
+
+
+def delete_account_group(primary_id: str) -> tuple:
+    """Delete an account group from GitHub."""
+    repo = _repo()
+    if not repo:
+        return False, "GitHub not configured"
+    try:
+        f = repo.get_contents(f"templates/group_{primary_id}.json")
+        repo.delete_file(f"templates/group_{primary_id}.json",
+                         f"Delete group {primary_id}", f.sha)
+        return True, f"Group {primary_id} deleted"
+    except Exception as e:
+        return False, str(e)

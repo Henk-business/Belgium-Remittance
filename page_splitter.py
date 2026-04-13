@@ -21,10 +21,12 @@ from github_storage import (
     github_configured, list_github_templates,
     get_template_cached, save_github_template, delete_github_template,
     invalidate_cache,
+    save_account_group, load_account_group, list_account_groups, delete_account_group,
 )
 from common import clean_id, get_email, LANG_LABELS, mailto_link
 from chunked_builder import build_chunked_sheet
 from poc_builder import build_poc_sheet
+from merged_builder import build_merged_workbook
 from customer_rules import (
     load_rule_github as _load_rule_direct,
     get_rule_cached, save_rule_github, delete_rule_github,
@@ -223,10 +225,75 @@ def show():
             key="spl_dl_lang",
             help="Translates Document Type column: Invoice, Credit note, Payment, etc.",
         )
+    # ── Build account group mapping ──────────────────────────────────────────
+    # Groups: {primary_id: {accounts:[...], label:..., tmpl_bytes:...}}
+    group_map    = {}  # acc_id -> primary_id (which group it belongs to)
+    group_defs   = {}  # primary_id -> group definition
+    if github_configured():
+        for grp in list_account_groups():
+            accs  = grp.get("accounts", [])
+            # Only activate a group if ALL its accounts are in this split
+            if all(str(a) in [str(k) for k in account_data.keys()] for a in accs):
+                primary = accs[0]
+                tmpl    = get_template_cached(primary) or                           next((get_template_cached(a) for a in accs
+                                if get_template_cached(a)), None)
+                group_defs[primary] = {**grp, "tmpl_bytes": tmpl}
+                for a in accs:
+                    group_map[str(a)] = primary
+
+    # Track which groups have already been written
+    written_groups = set()
+
     st.markdown("**Individual downloads (with custom rules/templates applied):**")
 
     for acc, acc_df_sel in account_data.items():
         total_sel = acc_df_sel[amount_col].sum() if amount_col and amount_col in acc_df_sel.columns else 0
+
+        # ── ACCOUNT GROUP: build combined file once for all accounts in group ──
+        primary = group_map.get(str(acc))
+        if primary:
+            if primary in written_groups:
+                continue  # already written this group
+            grp_def  = group_defs[primary]
+            grp_accs = grp_def["accounts"]
+            grp_dfs  = {str(a): translate_doc_types(account_data[a], dl_lang)
+                        for a in grp_accs if a in account_data}
+            tmpl_b   = grp_def.get("tmpl_bytes")
+            label    = grp_def.get("label", "")
+            try:
+                grp_bytes = build_merged_workbook(
+                    grp_dfs, tmpl_b, amount_col,
+                    today=ref_date, group_label=label, lang=dl_lang,
+                )
+                grp_total  = sum(df[amount_col].sum() for df in grp_dfs.values()
+                                 if amount_col and amount_col in df.columns)
+                grp_name   = label or " + ".join(grp_accs)
+                safe_grp   = grp_name.replace(" ", "_")[:30]
+                grp_label  = f"✓ merged ({len(grp_accs)} accounts)"
+            except Exception as e:
+                grp_bytes = None
+                grp_label = f"merge error: {e}"
+
+            written_groups.add(primary)
+            dl_c, info_c = st.columns([2, 3])
+            with dl_c:
+                if grp_bytes:
+                    st.download_button(
+                        f"⬇  {grp_name}",
+                        data=grp_bytes,
+                        file_name=f"{safe_grp}_{safe_date}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"spl_dl_grp_{primary}",
+                        use_container_width=True,
+                    )
+                else:
+                    st.error(grp_label)
+            with info_c:
+                st.caption(
+                    f"{', '.join(grp_accs)}  ·  "
+                    f"€{grp_total:,.2f}  ·  {grp_label}"
+                )
+            continue  # skip individual download for this account
 
         # Apply document type translation
         acc_df_sel = translate_doc_types(acc_df_sel, dl_lang)
@@ -605,6 +672,64 @@ def _template_manager():
                         st.rerun()
                     else:
                         st.error(msg)
+
+
+    # ── ACCOUNT GROUPS ────────────────────────────────────────────────────────
+    with st.expander("📋  Account groups (combined downloads)"):
+        st.caption(
+            "Group multiple accounts into one combined Excel file. "
+            "Upload a template for the primary account first, then define the group here."
+        )
+
+        if github_configured():
+            existing_groups = list_account_groups()
+            if existing_groups:
+                st.markdown("**Saved groups:**")
+                for grp in existing_groups:
+                    accs  = grp.get("accounts", [])
+                    label = grp.get("label", "")
+                    primary = accs[0] if accs else ""
+                    g1, g2 = st.columns([4, 1])
+                    with g1:
+                        st.markdown(
+                            f"**{label or primary}** — "
+                            f"{', '.join(accs)}"
+                        )
+                    with g2:
+                        if st.button("🗑", key=f"del_grp_{primary}",
+                                     use_container_width=True, help="Delete group"):
+                            ok, msg = delete_account_group(primary)
+                            if ok:
+                                st.rerun()
+                            else:
+                                st.error(msg)
+
+            st.markdown("**Create a new group:**")
+            ng1, ng2 = st.columns(2)
+            with ng1:
+                grp_label = st.text_input(
+                    "Group label (e.g. customer name)",
+                    key="grp_label", placeholder="North and South Beverages Belgium"
+                )
+            with ng2:
+                grp_accs_raw = st.text_input(
+                    "Account numbers (comma-separated)",
+                    key="grp_accs", placeholder="30172457, 30521289"
+                )
+
+            if st.button("💾  Save group", key="grp_save", type="primary"):
+                accs_list = [a.strip() for a in grp_accs_raw.split(",") if a.strip()]
+                if len(accs_list) < 2:
+                    st.error("Enter at least 2 account numbers separated by commas.")
+                else:
+                    ok, msg = save_account_group(accs_list[0], accs_list, grp_label.strip())
+                    if ok:
+                        st.success(f"Group saved: {msg}")
+                        st.rerun()
+                    else:
+                        st.error(msg)
+        else:
+            st.warning("GitHub storage must be configured to save account groups.")
 
 
 def _template_manager_session():
