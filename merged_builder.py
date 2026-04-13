@@ -26,13 +26,13 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # ── COLOURS (match standard splitter output) ──────────────────────────────────
-DK_BLUE  = "1F3864"
-MD_BLUE  = "2E75B6"
-WHITE    = "FFFFFF"
-GREY     = "F2F2F2"
-POS_FG   = "C00000"   # red  = positive (invoices)
-NEG_FG   = "375623"   # green = negative (credits)
-BLACK_FG = "000000"
+DK_BLUE  = "FF1F3864"
+MD_BLUE  = "FF2E75B6"
+WHITE    = "FFFFFFFF"
+GREY     = "FFF2F2F2"
+POS_FG   = "FFC00000"   # red  = positive (invoices)
+NEG_FG   = "FF375623"   # green = negative (credits)
+BLACK_FG = "FF000000"
 
 
 def _fill(rgb): return PatternFill("solid", fgColor=rgb)
@@ -117,11 +117,8 @@ def _read_template_structure(template_bytes: bytes) -> dict:
 
 def _write_account_sheet(wb, ws, acc_id: str, acc_df: pd.DataFrame,
                           tmpl_info: dict, today_str: str,
-                          amount_col: str, lang: str = "en"):
+                          amount_col: str):
     """Write one account sheet matching the template layout."""
-    from splitter_engine import translate_doc_types
-    acc_df = translate_doc_types(acc_df, lang)
-
     header_row = tmpl_info["header_row"]
     data_cols  = tmpl_info["data_cols"]
     ncols      = tmpl_info["ncols"]
@@ -189,7 +186,7 @@ def _write_account_sheet(wb, ws, acc_id: str, acc_df: pd.DataFrame,
                 raw = row_data[sap_col]
                 if is_amt:
                     val = float(raw) if pd.notna(raw) else 0.0
-                    fg  = POS_FG if val >= 0 else NEG_FG
+                    fg  = BLACK_FG
                 elif is_date:
                     try:
                         val = pd.Timestamp(raw).to_pydatetime() if pd.notna(raw) else ""
@@ -246,7 +243,7 @@ def build_merged_workbook(account_dfs: dict, template_bytes: bytes,
         ws = wb.create_sheet(title=str(acc_id)[:31])
         total = _write_account_sheet(
             wb, ws, str(acc_id), acc_df, tmpl_info,
-            today_str, amount_col, lang
+            today_str, amount_col
         )
         account_totals[str(acc_id)] = {"total": total, "lines": len(acc_df)}
 
