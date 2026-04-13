@@ -256,15 +256,9 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
     for idx, (acc, acc_df) in enumerate(account_data.items()):
         tab_name = _safe_tab(str(acc), idx)
 
-        # Only chunked accounts get a placeholder — everything else renders inline.
-        if str(acc) in CHUNKED_ACCOUNTS:
-            ws_ph = wb.create_sheet(title=tab_name)
-            mr(ws_ph, 1, 1, 3,
-               f"Account {acc} — see individual download below",
-               bg="md_blue", fg="white", sz=10)
-            continue
-
-        if False and templates and str(acc) in templates:  # disabled — always render
+        # No placeholders in standard layout — render everything as plain sheets.
+        if False:  # placeholder logic disabled for standard download
+            pass
             # Try to write the template-based sheet into the combined workbook
             try:
                 from poc_builder import build_poc_sheet, _load_poc_names
