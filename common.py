@@ -231,6 +231,40 @@ EMAIL_TEMPLATES = {
 }
 
 
+EMAIL_TEMPLATES["overview"] = {
+    "en": {
+        "subject": "Account Overview {account_id}",
+        "body": (
+            "Dear {customer_name},\n\n"
+            "Please find attached your requested account overview.\n\n"
+            "Please do not hesitate to contact us if you have any questions "
+            "or if you need any further information.\n\n"
+            "Kind regards,\n{sender_name}\n{company_name}"
+        ),
+    },
+    "nl": {
+        "subject": "Rekeningoverzicht {account_id}",
+        "body": (
+            "Beste {customer_name},\n\n"
+            "In bijlage vindt u het gevraagde rekeningoverzicht.\n\n"
+            "Aarzel niet om contact met ons op te nemen als u vragen heeft "
+            "of als u verdere informatie nodig heeft.\n\n"
+            "Met vriendelijke groeten,\n{sender_name}\n{company_name}"
+        ),
+    },
+    "fr": {
+        "subject": "Aper\u00e7u de compte {account_id}",
+        "body": (
+            "Cher(e) {customer_name},\n\n"
+            "Veuillez trouver ci-joint l'aper\u00e7u de compte demand\u00e9.\n\n"
+            "N'h\u00e9sitez pas \u00e0 nous contacter si vous avez des questions "
+            "ou si vous avez besoin d'informations compl\u00e9mentaires.\n\n"
+            "Cordialement,\n{sender_name}\n{company_name}"
+        ),
+    },
+}
+
+
 def get_email(template_key, lang, **kwargs):
     t = EMAIL_TEMPLATES[template_key][lang]
     return t["subject"].format(**kwargs), t["body"].format(**kwargs)

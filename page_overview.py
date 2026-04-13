@@ -5,6 +5,7 @@ import datetime
 import traceback
 
 from overview_engine import prepare_df, build_overview
+from common import get_email, mailto_link, LANG_LABELS
 
 
 def show():
@@ -224,3 +225,44 @@ def show():
         use_container_width=True,
         key="ov_dl",
     )
+
+    # ── EMAIL DRAFT ───────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 📧 Email draft")
+
+    ov_lang = st.session_state.get("ov_lang", "en")
+    e1, e2, e3 = st.columns(3)
+    with e1:
+        sender  = st.text_input("Your name",  key="ov_sender",  placeholder="Your Name")
+    with e2:
+        company = st.text_input("Company",    key="ov_company", placeholder="Your Company")
+    with e3:
+        to_email = st.text_input("Customer email", key="ov_to_email", placeholder="customer@example.com")
+
+    subject, body = get_email(
+        "overview", ov_lang,
+        customer_name=cname or f"Account {acc_lbl}",
+        account_id=acc_lbl if acc_lbl != "All accounts" else "",
+        sender_name=sender or "[Your Name]",
+        company_name=company or "[Your Company]",
+    )
+
+    st.text_input("Subject", value=subject, key="ov_email_subj")
+    st.text_area("Body", value=body, height=200, key="ov_email_body")
+
+    st.caption(
+        "📎 After downloading the Excel above, attach it manually to the email. "
+        "Click the button below to open a pre-filled draft in your email client."
+    )
+
+    if to_email:
+        mailto = mailto_link(to_email, subject, body)
+        st.markdown(
+            f'''<a href="{mailto}" style="display:block;text-align:center;
+            padding:10px 20px;background:#2E75B6;color:white;border-radius:8px;
+            text-decoration:none;font-weight:bold;margin-top:8px;">
+            ✉  Open in email client</a>''',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("Enter the customer email above to enable the open-in-email button.")
