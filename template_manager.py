@@ -107,7 +107,18 @@ def _is_plain_table(wb: openpyxl.Workbook) -> tuple[bool, int, list[str]]:
             if len(text_vals) >= 2:
                 # This looks like a header row
                 headers = [v for v in row_vals if v]
-                is_plain = (not has_merges) or (row_idx <= 2)
+                # Treat as plain table if:
+                # - no merges at all, OR
+                # - header is in first 2 rows, OR
+                # - all headers look like SAP column names (data header, not a title)
+                sap_keywords = {"account","assignment","document","amount","date",
+                                "reference","type","method","arrears","payment",
+                                "clearing","balance","currency","gl","g/l"}
+                looks_like_sap = sum(
+                    1 for h in text_vals
+                    if any(kw in h.lower() for kw in sap_keywords)
+                ) >= min(2, len(text_vals))
+                is_plain = (not has_merges) or (row_idx <= 2) or looks_like_sap
                 return is_plain, row_idx, headers
 
     return True, 1, []
@@ -206,28 +217,98 @@ def apply_template(template_bytes: bytes, sap_df: pd.DataFrame) -> bytes:
 def _apply_plain_template(ws, wb, header_row: int, template_headers: list[str],
                            sap_df: pd.DataFrame) -> bytes:
     """
-    Plain table template: clear data below headers, fill in SAP data
-    mapped to template columns.
+    Plain table template: preserve everything above and including the header row,
+    clear data below headers, fill in SAP data mapped to template columns.
+    Also updates any title/subtitle rows above the header with fresh values.
     """
+    import datetime as _dt
     col_map = _build_sap_to_template_map(template_headers, sap_df)
 
-    # Clear any existing data rows below headers
-    max_existing = ws.max_row
-    for row_idx in range(header_row + 1, max_existing + 1):
+    # Detect key fields for updating title rows
+    acc_col = next((c for c in sap_df.columns if c.lower() in
+                    ("account","customer","debitor","konto")), None)
+    amt_col = next((c for c in sap_df.columns if "amount" in c.lower()
+                    or "bedrag" in c.lower()), None)
+    account_id = str(sap_df[acc_col].dropna().iloc[0]).split(".")[0]                  if acc_col and len(sap_df) > 0 else ""
+    today_str  = _dt.date.today().strftime("%d/%m/%Y")
+    n_lines    = len(sap_df)
+
+    # Update title rows above header_row (keep formatting, just refresh values)
+    for row_idx in range(1, header_row):
+        for ci in range(1, ws.max_column + 1):
+            cell = ws.cell(row=row_idx, column=ci)
+            val  = str(cell.value or "")
+            # Update account number reference
+            if account_id and any(c.isdigit() for c in val) and len(val) > 5:
+                # Looks like it contains the old account number — update it
+                if any(str(account_id) not in val for _ in [1]):
+                    pass  # keep as-is, titles stay the same across accounts
+            # Update date references
+            if "·" in val and "/" in val:
+                # Subtitle row like "15/04/2026  ·  70 lines  ·  ..."
+                import re
+                new_val = re.sub(r"\d{2}/\d{2}/\d{4}", today_str, val)
+                new_val = re.sub(r"\d+ lines", f"{n_lines} lines", new_val)
+                new_val = re.sub(r"\d+ regels", f"{n_lines} regels", new_val)
+                cell.value = new_val
+
+    # Capture row style from first existing data row for new rows
+    style_row = header_row + 1
+    style_cells = {}
+    if style_row <= ws.max_row:
+        for ci in range(1, ws.max_column + 1):
+            src = ws.cell(row=style_row, column=ci)
+            from copy import copy as _copy
+            style_cells[ci] = {
+                "font":          _copy(src.font)      if src.font else None,
+                "fill":          _copy(src.fill)      if src.fill else None,
+                "border":        _copy(src.border)    if src.border else None,
+                "alignment":     _copy(src.alignment) if src.alignment else None,
+                "number_format": src.number_format,
+            }
+        alt_style = {}  # alternating row style (row after first data row)
+        if style_row + 1 <= ws.max_row:
+            for ci in range(1, ws.max_column + 1):
+                src = ws.cell(row=style_row + 1, column=ci)
+                from copy import copy as _copy
+                alt_style[ci] = {
+                    "font":          _copy(src.font)      if src.font else None,
+                    "fill":          _copy(src.fill)      if src.fill else None,
+                    "border":        _copy(src.border)    if src.border else None,
+                    "alignment":     _copy(src.alignment) if src.alignment else None,
+                    "number_format": src.number_format,
+                }
+        else:
+            alt_style = style_cells
+
+    # Clear existing data rows
+    for row_idx in range(header_row + 1, ws.max_row + 2):
         for ci in range(1, ws.max_column + 1):
             ws.cell(row=row_idx, column=ci).value = None
 
-    # Write data rows
+    # Write fresh data rows with template styling
     for di, (_, data_row) in enumerate(sap_df.iterrows()):
         write_row = header_row + 1 + di
-        for col_pos, sap_col in col_map.items():
-            val = data_row.get(sap_col, "")
-            cell = ws.cell(row=write_row, column=col_pos, value=_clean_val(val))
-            # Apply basic number format for amounts
-            if isinstance(_clean_val(val), float):
-                cell.number_format = "#,##0.00"
-            elif isinstance(_clean_val(val), __import__("datetime").datetime):
-                cell.number_format = "DD/MM/YYYY"
+        s = style_cells if di % 2 == 0 else alt_style
+        for ci in range(1, ws.max_column + 1):
+            cell = ws.cell(row=write_row, column=ci)
+            if s:
+                from copy import copy as _copy
+                if s.get(ci, {}).get("font"):      cell.font      = _copy(s[ci]["font"])
+                if s.get(ci, {}).get("fill"):      cell.fill      = _copy(s[ci]["fill"])
+                if s.get(ci, {}).get("border"):    cell.border    = _copy(s[ci]["border"])
+                if s.get(ci, {}).get("alignment"): cell.alignment = _copy(s[ci]["alignment"])
+            sap_col = col_map.get(ci)
+            if sap_col:
+                val = _clean_val(data_row.get(sap_col, ""))
+                cell.value = val
+                if isinstance(val, float):
+                    cell.number_format = "#,##0.00"
+                elif isinstance(val, __import__("datetime").datetime):
+                    cell.number_format = "DD/MM/YYYY"
+        ws.row_dimensions[write_row].height = (
+            ws.row_dimensions[style_row].height or 14
+        )
 
     out = io.BytesIO()
     wb.save(out)

@@ -371,7 +371,36 @@ def build_template_sheet(account_id: str, acc_df: pd.DataFrame,
     today_str = pd.Timestamp(today or datetime.date.today()).strftime("%d/%m/%Y")
 
     try:
-        return apply_template(template_bytes, acc_df)
+        result = apply_template(template_bytes, acc_df)
+        # Post-process: update account number and title in any title rows
+        import openpyxl, io as _io, re as _re
+        wb = openpyxl.load_workbook(_io.BytesIO(result))
+        ws = wb.active
+        new_title = str(account_id)[:31]
+        # Rename any conflicting sheets first
+        for other_ws in list(wb.worksheets):
+            if other_ws != ws and other_ws.title == new_title:
+                other_ws.title = "_old_" + other_ws.title[:26]
+        ws.title = new_title
+        for r in range(1, min(6, ws.max_row + 1)):
+            for ci in range(1, ws.max_column + 1):
+                cell = ws.cell(r, ci)
+                val  = str(cell.value or "")
+                if not val:
+                    continue
+                # Replace old account number with new one
+                new_val = _re.sub(r"\b3\d{7}\b", str(account_id), val)
+                # Update line count in subtitle
+                new_val = _re.sub(r"\d+ lines", f"{len(acc_df)} lines", new_val)
+                new_val = _re.sub(r"\d+ lignes", f"{len(acc_df)} lignes", new_val)
+                new_val = _re.sub(r"\d+ regels", f"{len(acc_df)} regels", new_val)
+                # Update date
+                new_val = _re.sub(r"\d{2}/\d{2}/\d{4}", today_str, new_val)
+                if new_val != val:
+                    cell.value = new_val
+        out = _io.BytesIO()
+        wb.save(out)
+        return out.getvalue()
     except Exception:
         # Fallback: standard layout for this account
         data = build_split_workbook(
