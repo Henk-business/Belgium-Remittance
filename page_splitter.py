@@ -265,12 +265,20 @@ def show():
                 layout_label = f"✓ chunked €{CHUNKED_ACCOUNTS[str(acc)]['chunk_size']:,.0f}"
 
             elif tmpl_bytes:
-                # Template account — detect POC vs plain
-                ref3_col = next((c for c in acc_df_sel.columns
-                                 if 'reference key 3' in c.lower()), None)
-                is_poc = bool(ref3_col and
-                              acc_df_sel[ref3_col].astype(str).str.strip()
-                              .str.startswith('29').any())
+                # Detect POC by checking the TEMPLATE structure, not the SAP data
+                # (SAP data always has 29xxxxx in Ref Key 3, but only NEGO-style
+                # templates have 29xxxxx POC numbers in column A)
+                try:
+                    import openpyxl as _oxl, io as _io2
+                    _twb = _oxl.load_workbook(_io2.BytesIO(tmpl_bytes))
+                    _tws = _twb.active
+                    _maxr = min((_tws.max_row or 20), 20)
+                    is_poc = any(
+                        str(_tws.cell(r, 1).value or '').strip().startswith('29')
+                        for r in range(1, _maxr + 1)
+                    )
+                except Exception:
+                    is_poc = False
                 if is_poc:
                     acc_wb_bytes = build_poc_sheet(acc_df_sel, str(acc), tmpl_bytes, today=ref_date)
                     layout_label = '✓ POC grouped'
