@@ -256,7 +256,7 @@ def show():
                 continue  # already written this group
             grp_def  = group_defs[primary]
             grp_accs = grp_def["accounts"]
-            grp_dfs  = {str(a): translate_doc_types(account_data[a], dl_lang)
+            grp_dfs  = {str(a): account_data[a].copy()
                         for a in grp_accs if a in account_data}
             tmpl_b   = grp_def.get("tmpl_bytes")
             label    = grp_def.get("label", "")

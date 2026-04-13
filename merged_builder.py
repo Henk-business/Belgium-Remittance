@@ -186,7 +186,7 @@ def _write_account_sheet(wb, ws, acc_id: str, acc_df: pd.DataFrame,
                 raw = row_data[sap_col]
                 if is_amt:
                     val = float(raw) if pd.notna(raw) else 0.0
-                    fg  = BLACK_FG
+                    fg  = "FFC00000" if val >= 0 else "FF375623"
                 elif is_date:
                     try:
                         val = pd.Timestamp(raw).to_pydatetime() if pd.notna(raw) else ""
@@ -214,7 +214,29 @@ def _write_account_sheet(wb, ws, acc_id: str, acc_df: pd.DataFrame,
 
         ws.row_dimensions[r].height = 13
 
-    return acc_df[amount_col].sum() if amount_col and amount_col in acc_df.columns else 0
+    acc_total = acc_df[amount_col].sum() if amount_col and amount_col in acc_df.columns else 0
+
+    # ── Total row at the bottom ───────────────────────────────────────────────
+    total_row = header_row + 1 + len(acc_df)
+    fg_total  = "FFC00000" if acc_total >= 0 else "FF375623"
+    for ci in range(1, ncols + 1):
+        cell = ws.cell(row=total_row, column=ci)
+        cell.fill   = _fill(DK_BLUE)
+        cell.border = _thin()
+        if ci == 1:
+            cell.value     = "TOTAL"
+            cell.font      = _font(bold=True, color=WHITE, size=10)
+            cell.alignment = _align("left")
+        elif ci == amt_ci:
+            cell.value          = acc_total
+            cell.font           = _font(bold=True, color=fg_total, size=10)
+            cell.alignment      = _align("right")
+            cell.number_format  = "#,##0.00"
+        else:
+            cell.font = _font(bold=True, color=WHITE, size=10)
+    ws.row_dimensions[total_row].height = 16
+
+    return acc_total
 
 
 def build_merged_workbook(account_dfs: dict, template_bytes: bytes,
