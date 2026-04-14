@@ -208,23 +208,37 @@ def _parse_groups(df, amt_col):
 
 def _group_year(group, doc_date_col, doc_type_col, amt_col):
     """
-    Year of a group = year of the oldest net due date in the group.
-    Fallback: oldest document date.
+    Year of a group = year of the oldest net due date among NON-clearing rows.
+    AB/Clearing rows are excluded so one old clearing doesn't drag current
+    invoices into a past year. Fallback: all rows, then doc date.
     """
     net_due_col = next((c for c in group[0].index
                         if "net due" in c.lower()
                         or "vervaldatum" in c.lower()), None) if group else None
-    due_dates, doc_dates = [], []
+
+    SKIP_TYPES = {"AB", "ZP", "DZ"}   # clearing/payment types to skip for year assignment
+
+    due_dates_inv, due_dates_all = [], []
+    doc_dates_inv, doc_dates_all = [], []
     for row in group:
+        dt = str(row.get(doc_type_col, "") or "").strip().upper() if doc_type_col else ""
+        is_clearing = dt in SKIP_TYPES
         if net_due_col:
             nd = row.get(net_due_col)
             if nd is not None and pd.notna(nd):
-                due_dates.append(nd)
+                due_dates_all.append(nd)
+                if not is_clearing:
+                    due_dates_inv.append(nd)
         if doc_date_col:
             dd = row.get(doc_date_col)
             if dd is not None and pd.notna(dd):
-                doc_dates.append(dd)
-    dates = due_dates if due_dates else doc_dates
+                doc_dates_all.append(dd)
+                if not is_clearing:
+                    doc_dates_inv.append(dd)
+
+    # Prefer invoice dates; fall back to all dates
+    dates = (due_dates_inv or due_dates_all or
+             doc_dates_inv or doc_dates_all)
     if not dates:
         return None
     oldest = min(dates)
@@ -279,15 +293,15 @@ def build_overview(df: pd.DataFrame, amt_col: str,
                              if "net due" in c.lower()
                              or "vervaldatum" in c.lower()), None)
     def grp_sort_key(grp, _nd=net_due_col_sort, _dd=doc_date_col):
-        due_dates, doc_dates = [], []
+        SKIP = {"AB","ZP","DZ"}
+        due_inv, due_all = [], []
         for row in grp:
-            if _nd:
-                nd = row.get(_nd)
-                if nd is not None and pd.notna(nd): due_dates.append(nd)
-            if _dd:
-                dd = row.get(_dd)
-                if dd is not None and pd.notna(dd): doc_dates.append(dd)
-        dates = due_dates if due_dates else doc_dates
+            dt = str(row.get(doc_type_col,"") or "").strip().upper() if doc_type_col else ""
+            nd = row.get(_nd) if _nd else None
+            if nd is not None and pd.notna(nd):
+                due_all.append(nd)
+                if dt not in SKIP: due_inv.append(nd)
+        dates = due_inv or due_all
         return min(dates) if dates else pd.Timestamp.min
     for yr in years:
         by_year[yr].sort(key=grp_sort_key, reverse=True)  # newest first

@@ -91,29 +91,30 @@ def show():
     # ── SETTINGS ──────────────────────────────────────────────────────────────
     st.markdown("### 2 · Settings")
 
-    s1, s2, s3, s4, s5 = st.columns(5)
+    # Mode: single year (current overview) vs multi-year
+    mode_col, _ = st.columns([2,3])
+    with mode_col:
+        ov_mode = st.radio(
+            "Overview type",
+            ["📋 Current overview (single period)", "📅 Multi-year overview"],
+            key="ov_mode_radio",
+            horizontal=True,
+        )
+    single_mode = ov_mode.startswith("📋")
+
+    s1, s2, s3, s4 = st.columns(4)
     with s1:
-        year_from = st.number_input(
-            "From year", min_value=2000, max_value=2099,
-            value=yr_min, step=1, key="ov_from_input",
-        )
-    with s2:
-        year_to = st.number_input(
-            "To year", min_value=2000, max_value=2099,
-            value=yr_max, step=1, key="ov_to_input",
-        )
-    with s3:
         lang = st.selectbox(
             "Language", ["en","nl","fr"],
             format_func=lambda x: {"en":"🇬🇧 English","nl":"🇳🇱 Dutch","fr":"🇫🇷 French"}[x],
             key="ov_lang_w",
         )
-    with s4:
+    with s2:
         customer_name = st.text_input(
             "Customer name", key="ov_cname_w",
             placeholder="e.g. ACME Corp",
         )
-    with s5:
+    with s3:
         if len(accounts) > 1:
             account_filter = st.selectbox(
                 "Account", ["All accounts"] + accounts,
@@ -123,6 +124,26 @@ def show():
             account_filter = accounts[0] if accounts else "All accounts"
             st.text_input("Account", value=account_filter,
                           key="ov_acc_disp_w", disabled=True)
+    with s4:
+        if not single_mode:
+            year_from = st.number_input(
+                "From year", min_value=2000, max_value=2099,
+                value=yr_min, step=1, key="ov_from_input",
+            )
+        else:
+            year_from = yr_max
+            st.number_input("From year", value=yr_max, disabled=True,
+                            key="ov_from_input")
+
+    if not single_mode:
+        yr5, _ = st.columns([1,3])
+        with yr5:
+            year_to = st.number_input(
+                "To year", min_value=2000, max_value=2099,
+                value=yr_max, step=1, key="ov_to_input",
+            )
+    else:
+        year_to = yr_max
 
     year_from = int(year_from)
     year_to   = int(year_to)
@@ -132,7 +153,10 @@ def show():
         return
 
     n_years = year_to - year_from + 1
-    st.caption(f"Will generate {n_years} year section(s) on one sheet.")
+    if single_mode:
+        st.caption(f"Current overview — all transactions in {yr_max}.")
+    else:
+        st.caption(f"Will generate {n_years} year section(s) on one sheet.")
 
     # ── GENERATE ──────────────────────────────────────────────────────────────
     st.markdown("### 3 · Generate")
