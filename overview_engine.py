@@ -40,7 +40,8 @@ STRIP_COLS = {
     "Net due date symbol","Text","Dunning Level","Last Dunned",
     "Reversed with","Document Header Text","User Name","Special G/L ind.",
     "Billing Document","Reference Key 1",
-    # KEPT: Payment Method, G/L Account, Clearing date, Clearing Document
+    "Clearing date","Clearing Document",
+    # KEPT: Payment Method, G/L Account
 }
 
 GL_LABELS = {

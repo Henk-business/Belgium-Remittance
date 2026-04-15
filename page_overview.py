@@ -102,32 +102,20 @@ def show():
         )
     single_mode = ov_mode.startswith("📋")
 
-    d1, d2, _ = st.columns([1, 1, 2])
-    with d1:
-        ref_date = st.date_input(
-            "Reference date",
-            value=datetime.date.today(),
-            key="ov_refdate_w",
-        )
-    with d2:
-        remove_not_due = st.checkbox(
-            "Remove invoices not yet due",
-            value=True, key="ov_remove_nd",
-        )
-
-    s1, s2, s3, s4 = st.columns(4)
-    with s1:
+    # ── Row 1: always-visible settings ───────────────────────────────────────
+    r1a, r1b, r1c = st.columns(3)
+    with r1a:
         lang = st.selectbox(
             "Language", ["en","nl","fr"],
             format_func=lambda x: {"en":"🇬🇧 English","nl":"🇳🇱 Dutch","fr":"🇫🇷 French"}[x],
             key="ov_lang_w",
         )
-    with s2:
+    with r1b:
         customer_name = st.text_input(
             "Customer name", key="ov_cname_w",
             placeholder="e.g. ACME Corp",
         )
-    with s3:
+    with r1c:
         if len(accounts) > 1:
             account_filter = st.selectbox(
                 "Account", ["All accounts"] + accounts,
@@ -137,26 +125,45 @@ def show():
             account_filter = accounts[0] if accounts else "All accounts"
             st.text_input("Account", value=account_filter,
                           key="ov_acc_disp_w", disabled=True)
-    with s4:
-        if not single_mode:
-            year_from = st.number_input(
-                "From year", min_value=2000, max_value=2099,
-                value=yr_min, step=1, key="ov_from_input",
-            )
-        else:
-            year_from = yr_max
-            st.number_input("From year", value=yr_max, disabled=True,
-                            key="ov_from_input")
 
-    if not single_mode:
-        yr5, _ = st.columns([1,3])
-        with yr5:
-            year_to = st.number_input(
-                "To year", min_value=2000, max_value=2099,
-                value=yr_max, step=1, key="ov_to_input",
-            )
-    else:
-        year_to = yr_max
+    # ── Row 2: mode-specific settings ─────────────────────────────────────────
+    r2a, r2b, r2c, r2d = st.columns(4)
+    with r2a:
+        # Current only: reference date
+        ref_date = st.date_input(
+            "Reference date",
+            value=datetime.date.today(),
+            key="ov_refdate_w",
+            disabled=not single_mode,
+            help="Only used in Current overview mode",
+        )
+    with r2b:
+        # Current only: remove not due
+        remove_not_due = st.checkbox(
+            "Remove invoices not yet due",
+            value=True, key="ov_remove_nd",
+            disabled=not single_mode,
+        )
+    with r2c:
+        # Multi-year only: from year
+        year_from = st.number_input(
+            "From year", min_value=2000, max_value=2099,
+            value=yr_min, step=1, key="ov_from_input",
+            disabled=single_mode,
+            help="Only used in Multi-year mode",
+        )
+        if single_mode:
+            year_from = yr_max
+    with r2d:
+        # Multi-year only: to year
+        year_to = st.number_input(
+            "To year", min_value=2000, max_value=2099,
+            value=yr_max, step=1, key="ov_to_input",
+            disabled=single_mode,
+            help="Only used in Multi-year mode",
+        )
+        if single_mode:
+            year_to = yr_max
 
     year_from = int(year_from)
     year_to   = int(year_to)
