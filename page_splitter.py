@@ -26,7 +26,7 @@ from github_storage import (
 from common import clean_id, get_email, LANG_LABELS, mailto_link
 from chunked_builder import build_chunked_sheet
 from poc_builder import build_poc_sheet
-from merged_builder import build_merged_workbook
+from merged_builder import build_merged_workbook, build_flat_workbook
 from customer_rules import (
     load_rule_github as _load_rule_direct,
     get_rule_cached, save_rule_github, delete_rule_github,
@@ -267,7 +267,17 @@ def show():
 
             grp_bytes = None
             grp_label = ""
-            if not tmpl_b:
+            is_flat   = grp_def.get("flat", False)
+            if is_flat:
+                try:
+                    grp_bytes = build_flat_workbook(
+                        grp_dfs, amount_col,
+                        today=ref_date, group_label=label, lang=dl_lang,
+                    )
+                    grp_label = f"✓ flat merged ({len(grp_accs)} accounts)"
+                except Exception as e:
+                    grp_label = f"merge error: {e}"
+            elif not tmpl_b:
                 grp_label = "merge error: no template found — upload a template for the primary account first"
             else:
                 try:

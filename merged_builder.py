@@ -352,3 +352,138 @@ def build_merged_workbook(account_dfs: dict, template_bytes: bytes,
     wb.save(out)
     out.seek(0)
     return out.read()
+
+
+def build_flat_workbook(account_dfs: dict, amount_col: str,
+                         today=None, group_label: str = "",
+                         lang: str = "en") -> bytes:
+    """
+    Combine all accounts into ONE flat sheet — no per-account sheets, no summary.
+    All rows merged together, sorted by net due date desc, single TOTAL row.
+    """
+    import datetime as _dt
+    if today is None:
+        today = _dt.date.today()
+    today_str = pd.Timestamp(today).strftime("%d/%m/%Y")
+
+    from splitter_engine import translate_doc_types
+    # Concatenate all account dfs
+    all_dfs = []
+    for acc_id, acc_df in account_dfs.items():
+        all_dfs.append(acc_df.copy())
+    combined = pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+
+    if len(combined) == 0:
+        raise ValueError("No data to combine")
+
+    # Sort by net due date desc
+    ndd = next((c for c in combined.columns if "net due" in c.lower()), None)
+    if ndd:
+        combined = combined.sort_values(ndd, ascending=False)
+
+    amt_ci_raw = next((c for c in combined.columns if "amount" in c.lower()), None)
+    total = combined[amt_ci_raw].sum() if amt_ci_raw else 0
+    n     = len(combined)
+    acc_ids = list(account_dfs.keys())
+    title = group_label or " + ".join(acc_ids)
+    ncols = len(combined.columns)
+
+    date_col_names = {c for c in combined.columns
+                      if any(k in c.lower() for k in ["date","datum"])
+                      or pd.api.types.is_datetime64_any_dtype(combined[c])}
+    amt_ci = (list(combined.columns).index(amt_ci_raw) + 1) if amt_ci_raw else None
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = (title[:31])
+    ws.freeze_panes = "A5"
+
+    # Column widths
+    for ci, col in enumerate(combined.columns, 1):
+        if col == amt_ci_raw:
+            ws.column_dimensions[get_column_letter(ci)].width = 20
+        elif col in date_col_names:
+            ws.column_dimensions[get_column_letter(ci)].width = 13
+        else:
+            w = max(len(col)+2, 10)
+            ws.column_dimensions[get_column_letter(ci)].width = min(w, 28)
+
+    # Row 1: title
+    _mw(ws,1,1,ncols,f"{title}  —  {today_str}",
+        bold=True,fill=DK_BLUE,fg=WHITE,size=13)
+    ws.row_dimensions[1].height = 32
+
+    # Row 2: subtitle
+    _mw(ws,2,1,ncols,
+        f"{today_str}  ·  {n} lines  ·  Invoices not yet due removed",
+        bold=False,fill=MD_BLUE,fg=WHITE,size=9)
+    ws.row_dimensions[2].height = 16
+
+    # Row 3: blank gap
+    ws.row_dimensions[3].height = 6
+
+    # Row 4: column headers
+    for ci, col in enumerate(combined.columns, 1):
+        cell = ws.cell(row=4, column=ci, value=col)
+        cell.font      = _font(bold=True, color=WHITE, size=9)
+        cell.fill      = _fill(MD_BLUE)
+        cell.alignment = _align("center")
+        cell.border    = _thin()
+    ws.row_dimensions[4].height = 18
+
+    # Data rows
+    for ri, (_, row_data) in enumerate(combined.iterrows()):
+        r        = 5 + ri
+        row_fill = WHITE if ri % 2 == 0 else GREY
+        for ci, col in enumerate(combined.columns, 1):
+            val     = row_data[col]
+            is_amt  = (ci == amt_ci)
+            is_date = col in date_col_names
+            if is_amt:
+                cell_val = float(val) if pd.notna(val) else 0.0
+                fg = "FFC00000" if cell_val >= 0 else "FF375623"
+            elif is_date:
+                try:
+                    cell_val = pd.Timestamp(val).to_pydatetime() if pd.notna(val) else ""
+                except Exception:
+                    cell_val = ""
+                fg = BLACK_FG
+            elif pd.isna(val):
+                cell_val, fg = "", BLACK_FG
+            elif isinstance(val, float) and val == int(val):
+                cell_val, fg = int(val), BLACK_FG
+            else:
+                cell_val, fg = val, BLACK_FG
+            cell = ws.cell(r, ci, value=cell_val)
+            cell.font      = _font(color=fg, size=9)
+            cell.fill      = _fill(row_fill)
+            cell.alignment = _align("right" if is_amt else "left")
+            cell.border    = _thin()
+            if is_amt:
+                cell.number_format = "#,##0.00"
+            elif is_date and isinstance(cell_val, datetime.datetime):
+                cell.number_format = "DD/MM/YYYY"
+        ws.row_dimensions[r].height = 13
+
+    # Total row
+    r_total = 5 + len(combined)
+    for ci in range(1, ncols+1):
+        cell = ws.cell(r_total, ci)
+        cell.fill = _fill(DK_BLUE); cell.border = _thin()
+        if ci == 1:
+            cell.value = "TOTAL"
+            cell.font  = _font(bold=True, color=WHITE, size=10)
+            cell.alignment = _align("left")
+        elif ci == amt_ci:
+            cell.value = total
+            cell.font  = _font(bold=True, color=WHITE, size=10)
+            cell.alignment = _align("right")
+            cell.number_format = "#,##0.00"
+        else:
+            cell.font = _font(bold=True, color=WHITE, size=10)
+    ws.row_dimensions[r_total].height = 16
+
+    out = BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return out.read()

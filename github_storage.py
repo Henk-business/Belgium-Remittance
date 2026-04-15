@@ -206,12 +206,12 @@ def _get_group_sha(primary_id: str) -> Optional[str]:
     return None
 
 
-def save_account_group(primary_id: str, accounts: list, label: str = "") -> tuple:
+def save_account_group(primary_id: str, accounts: list, label: str = "", flat: bool = False) -> tuple:
     """Save an account group definition to GitHub as JSON."""
     if not github_configured():
         return False, "GitHub not configured."
     import json
-    content_str = json.dumps({"accounts": accounts, "label": label}, indent=2)
+    content_str = json.dumps({"accounts": accounts, "label": label, "flat": flat}, indent=2)
     content_b64 = base64.b64encode(content_str.encode()).decode()
     sha     = _get_group_sha(primary_id)
     payload = {
