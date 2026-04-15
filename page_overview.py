@@ -107,7 +107,7 @@ def show():
         ref_date = st.date_input(
             "Reference date",
             value=datetime.date.today(),
-            key="ov_refdate",
+            key="ov_refdate_w",
         )
     with d2:
         remove_not_due = st.checkbox(
@@ -230,7 +230,7 @@ def show():
                 st.session_state["ov_cname"]   = customer_name.strip()
                 st.session_state["ov_nrows"]   = n_real
                 st.session_state["ov_ready"]   = True
-                st.session_state["ov_refdate"]  = ref_date
+                st.session_state["ov_refdate_s"] = ref_date
                 st.session_state["ov_lang"]    = lang
             except Exception as e:
                 st.error(f"Error: {e}")
