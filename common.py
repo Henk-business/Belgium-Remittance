@@ -192,7 +192,7 @@ EMAIL_TEMPLATES = {
     },
     "account": {
         "en": {
-            "subject": "Account Statement — {account_id} — {date}",
+            "subject": "{customer_name} (00{account_id})",
             "body": (
                 "Dear {customer_name},\n\n"
                 "Please find attached your account statement as at {date}.\n\n"
@@ -204,7 +204,7 @@ EMAIL_TEMPLATES = {
             ),
         },
         "nl": {
-            "subject": "Rekeningoverzicht — {account_id} — {date}",
+            "subject": "{customer_name} (00{account_id})",
             "body": (
                 "Geachte {customer_name},\n\n"
                 "Bijgevoegd vindt u uw rekeningoverzicht per {date}.\n\n"
@@ -216,7 +216,7 @@ EMAIL_TEMPLATES = {
             ),
         },
         "fr": {
-            "subject": "Relevé de compte — {account_id} — {date}",
+            "subject": "{customer_name} (00{account_id})",
             "body": (
                 "Cher/Chère {customer_name},\n\n"
                 "Veuillez trouver ci-joint votre relevé de compte au {date}.\n\n"
@@ -233,7 +233,7 @@ EMAIL_TEMPLATES = {
 
 EMAIL_TEMPLATES["overview"] = {
     "en": {
-        "subject": "Account Overview {account_id}",
+        "subject": "{customer_name} (00{account_id})",
         "body": (
             "Dear {customer_name},\n\n"
             "Please find attached your requested account overview.\n\n"
@@ -243,7 +243,7 @@ EMAIL_TEMPLATES["overview"] = {
         ),
     },
     "nl": {
-        "subject": "Rekeningoverzicht {account_id}",
+        "subject": "{customer_name} (00{account_id})",
         "body": (
             "Beste {customer_name},\n\n"
             "In bijlage vindt u het gevraagde rekeningoverzicht.\n\n"
