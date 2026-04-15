@@ -732,12 +732,19 @@ def _template_manager():
                     key="grp_accs", placeholder="30172457, 30521289"
                 )
 
+
+            flat_merge = st.checkbox(
+                "Flat merge — combine all accounts into one sheet (no separate tabs)",
+                key="grp_flat",
+                help="Use this when all accounts should appear as one combined list",
+            )
+
             if st.button("💾  Save group", key="grp_save", type="primary"):
                 accs_list = [a.strip() for a in grp_accs_raw.split(",") if a.strip()]
                 if len(accs_list) < 2:
                     st.error("Enter at least 2 account numbers separated by commas.")
                 else:
-                    ok, msg = save_account_group(accs_list[0], accs_list, grp_label.strip())
+                    ok, msg = save_account_group(accs_list[0], accs_list, grp_label.strip(), flat=flat_merge)
                     if ok:
                         st.success(f"Group saved: {msg}")
                         st.rerun()
