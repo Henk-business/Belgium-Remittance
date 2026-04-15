@@ -262,7 +262,8 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     import datetime as _dt
     if reference_date is None:
         reference_date = _dt.date.today()
-    ref_ts = pd.Timestamp(reference_date)
+    ref_ts    = pd.Timestamp(reference_date)
+    today_str = ref_ts.strftime("%d/%m/%Y")
 
     if remove_not_due:
         net_due_col_filt = next((c for c in df.columns
