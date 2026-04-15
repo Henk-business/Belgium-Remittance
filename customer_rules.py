@@ -76,11 +76,11 @@ def load_rule_github(account_id: str) -> Optional[dict]:
     if not _gh_ok():
         return None
     import requests, base64
-    resp = requests.get(_api(f"templates/config_{account_id}.json"),
-                        headers=_gh_headers(), timeout=10)
-    if not resp.ok:
-        return None
     try:
+        resp = requests.get(_api(f"templates/config_{account_id}.json"),
+                            headers=_gh_headers(), timeout=10)
+        if not resp.ok:
+            return None
         raw = base64.b64decode(resp.json()["content"].replace("\n", ""))
         return merge_rule(json.loads(raw))
     except Exception:

@@ -95,9 +95,12 @@ def get_file_sha(account_id: str) -> Optional[str]:
     if not github_configured():
         return None
     filename = f"templates/{account_id}.xlsx"
-    resp = requests.get(_api(filename), headers=_headers(), timeout=10)
-    if resp.ok:
-        return resp.json().get("sha")
+    try:
+        resp = requests.get(_api(filename), headers=_headers(), timeout=10)
+        if resp.ok:
+            return resp.json().get("sha")
+    except Exception:
+        pass
     return None
 
 
@@ -254,8 +257,11 @@ def list_account_groups() -> list:
     if not github_configured():
         return []
     import json
-    resp = requests.get(_api("templates"), headers=_headers(), timeout=10)
-    if not resp.ok:
+    try:
+        resp = requests.get(_api("templates"), headers=_headers(), timeout=10)
+        if not resp.ok:
+            return []
+    except Exception:
         return []
     groups = []
     for f in resp.json():
