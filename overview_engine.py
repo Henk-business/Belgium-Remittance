@@ -298,7 +298,7 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     # Parse all groups
     all_groups = _parse_groups(df, amt_col)
 
-    if single_mode:
+    if year_from == year_to:
         # Single mode: show ALL groups flat — no year filtering at all
         by_year = {year_to: list(all_groups)}
         years   = [year_to]
@@ -348,7 +348,7 @@ def build_overview(df: pd.DataFrame, amt_col: str,
 
     # ── Title rows ────────────────────────────────────────────────────────────
     r = 1
-    if single_mode:
+    if year_from == year_to:
         title = "  ·  ".join(filter(None, [
             customer_name,
             f"Account {account_id}" if account_id else "",
@@ -456,7 +456,7 @@ def build_overview(df: pd.DataFrame, amt_col: str,
         grand_total += yr_net
 
         # Year banner — skip in single mode (title row already has customer info)
-        if not single_mode:
+        if year_from != year_to:
             _mw(ws, r, 1, ncols,
                 _t(lang, "year_banner", yr=yr, n=len(yr_groups),
                    inv=f"{yr_inv:,.2f}", cred=f"{yr_cred:,.2f}", net=f"{yr_net:,.2f}"),
@@ -536,7 +536,7 @@ def build_overview(df: pd.DataFrame, amt_col: str,
             # No G/L subtotals — groups already have their own subtotals
 
         # Year total
-        subtotal_row(_t(lang, "year_total", yr="" if single_mode else yr).strip(" —"),
+        subtotal_row(_t(lang, "year_total", yr="" if year_from == year_to else yr).strip(" —"),
                      yr_net, DK_BLUE, size=10)
 
         # Gap between years
