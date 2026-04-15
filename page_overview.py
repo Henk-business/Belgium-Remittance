@@ -221,7 +221,6 @@ def show():
                     customer_name=customer_name.strip(),
                     account_id=(account_filter if account_filter != "All accounts" else ""),
                     lang=lang,
-                    single_mode=single_mode,
                 )
                 st.session_state["ov_result"]      = result
                 st.session_state["ov_acc"]         = account_filter
