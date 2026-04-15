@@ -252,6 +252,8 @@ def build_merged_workbook(account_dfs: dict, template_bytes: bytes,
         today = datetime.date.today()
     today_str = pd.Timestamp(today).strftime("%d/%m/%Y")
 
+    if not template_bytes:
+        raise ValueError("No template provided — upload a template for the primary account first.")
     tmpl_info = _read_template_structure(template_bytes)
 
     wb = openpyxl.Workbook()

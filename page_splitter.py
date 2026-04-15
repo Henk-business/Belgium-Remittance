@@ -259,19 +259,25 @@ def show():
                         for a in grp_accs if a in account_data}
             tmpl_b   = grp_def.get("tmpl_bytes")
             label    = grp_def.get("label", "")
-            try:
-                grp_bytes = build_merged_workbook(
-                    grp_dfs, tmpl_b, amount_col,
-                    today=ref_date, group_label=label, lang=dl_lang,
-                )
-                grp_total  = sum(df[amount_col].sum() for df in grp_dfs.values()
-                                 if amount_col and amount_col in df.columns)
-                grp_name   = label or " + ".join(grp_accs)
-                safe_grp   = grp_name.replace(" ", "_")[:30]
-                grp_label  = f"✓ merged ({len(grp_accs)} accounts)"
-            except Exception as e:
-                grp_bytes = None
-                grp_label = f"merge error: {e}"
+            # Always compute these before try so they're always defined
+            grp_name  = label or " + ".join(str(a) for a in grp_accs)
+            safe_grp  = grp_name.replace(" ", "_")[:30]
+            grp_total = sum(df[amount_col].sum() for df in grp_dfs.values()
+                            if amount_col and amount_col in df.columns)
+
+            grp_bytes = None
+            grp_label = ""
+            if not tmpl_b:
+                grp_label = "merge error: no template found — upload a template for the primary account first"
+            else:
+                try:
+                    grp_bytes = build_merged_workbook(
+                        grp_dfs, tmpl_b, amount_col,
+                        today=ref_date, group_label=label, lang=dl_lang,
+                    )
+                    grp_label = f"✓ merged ({len(grp_accs)} accounts)"
+                except Exception as e:
+                    grp_label = f"merge error: {e}"
 
             written_groups.add(primary)
             dl_c, info_c = st.columns([2, 3])
@@ -289,7 +295,7 @@ def show():
                     st.error(grp_label)
             with info_c:
                 st.caption(
-                    f"{', '.join(grp_accs)}  ·  "
+                    f"{', '.join(str(a) for a in grp_accs)}  ·  "
                     f"€{grp_total:,.2f}  ·  {grp_label}"
                 )
             continue  # skip individual download for this account
