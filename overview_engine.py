@@ -247,13 +247,30 @@ def _group_year(group, doc_date_col, doc_type_col, amt_col):
 
 # ── BUILD ─────────────────────────────────────────────────────────────────────
 
+
 def build_overview(df: pd.DataFrame, amt_col: str,
                    year_from: int, year_to: int,
-                   customer_name: str = "",
-                   account_id:    str = "",
-                   lang:          str = "en") -> BytesIO:
+                   customer_name:  str  = "",
+                   account_id:     str  = "",
+                   lang:           str  = "en",
+                   reference_date       = None,
+                   remove_not_due: bool = False) -> BytesIO:
 
     years = list(range(year_from, year_to + 1))
+
+    # Apply "remove not yet due" filter based on reference date
+    import datetime as _dt
+    if reference_date is None:
+        reference_date = _dt.date.today()
+    ref_ts = pd.Timestamp(reference_date)
+
+    if remove_not_due:
+        net_due_col_filt = next((c for c in df.columns
+                                 if "net due" in c.lower()
+                                 or "vervaldatum" in c.lower()), None)
+        if net_due_col_filt and net_due_col_filt in df.columns:
+            due = pd.to_datetime(df[net_due_col_filt], errors="coerce")
+            df  = df[due.isna() | (due <= ref_ts)].copy()
 
     # Key column names
     doc_date_col = next((c for c in df.columns if "document date" in c.lower()
@@ -281,12 +298,17 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     # Parse all groups
     all_groups = _parse_groups(df, amt_col)
 
-    # Assign year to each group
-    by_year = {yr: [] for yr in years}
-    for grp in all_groups:
-        yr = _group_year(grp, doc_date_col, doc_type_col, amt_col)
-        if yr is not None and year_from <= yr <= year_to:
-            by_year[yr].append(grp)
+    if single_mode:
+        # Single mode: show ALL groups flat — no year filtering at all
+        by_year = {year_to: list(all_groups)}
+        years   = [year_to]
+    else:
+        # Assign year to each group
+        by_year = {yr: [] for yr in years}
+        for grp in all_groups:
+            yr = _group_year(grp, doc_date_col, doc_type_col, amt_col)
+            if yr is not None and year_from <= yr <= year_to:
+                by_year[yr].append(grp)
 
     # Sort groups within each year: newest net due date first
     net_due_col_sort = next((c for c in df.columns
@@ -326,14 +348,22 @@ def build_overview(df: pd.DataFrame, amt_col: str,
 
     # ── Title rows ────────────────────────────────────────────────────────────
     r = 1
-    title = "  ·  ".join(filter(None, [
-        customer_name,
-        f"Account {account_id}" if account_id else "",
-        f"{year_from}–{year_to}  {_t(lang,'title_suffix')}",
-    ]))
+    if single_mode:
+        title = "  ·  ".join(filter(None, [
+            customer_name,
+            f"Account {account_id}" if account_id else "",
+            _t(lang, "title_suffix"),
+        ]))
+    else:
+        title = "  ·  ".join(filter(None, [
+            customer_name,
+            f"Account {account_id}" if account_id else "",
+            f"{year_from}–{year_to}  {_t(lang,'title_suffix')}",
+        ]))
     _mw(ws, r, 1, ncols, title, bold=True, bg=DK_BLUE, fg=WHITE, size=14)
     ws.row_dimensions[r].height = 34; r += 1
-    _mw(ws, r, 1, ncols, _t(lang, "subtitle"), bg=MD_BLUE, fg=WHITE, size=9)
+    sub_extra = f"  ·  {today_str}" + ("  ·  Invoices not yet due removed" if remove_not_due else "")
+    _mw(ws, r, 1, ncols, _t(lang, "subtitle") + sub_extra, bg=MD_BLUE, fg=WHITE, size=9)
     ws.row_dimensions[r].height = 16; r += 2
 
     # ── Helpers ───────────────────────────────────────────────────────────────
@@ -425,12 +455,13 @@ def build_overview(df: pd.DataFrame, amt_col: str,
             yr_inv = yr_cred = yr_net = 0.0
         grand_total += yr_net
 
-        # Year banner
-        _mw(ws, r, 1, ncols,
-            _t(lang, "year_banner", yr=yr, n=len(yr_groups),
-               inv=f"{yr_inv:,.2f}", cred=f"{yr_cred:,.2f}", net=f"{yr_net:,.2f}"),
-            bold=True, bg=DK_BLUE, fg=WHITE, size=11)
-        ws.row_dimensions[r].height = 22; r += 1
+        # Year banner — skip in single mode (title row already has customer info)
+        if not single_mode:
+            _mw(ws, r, 1, ncols,
+                _t(lang, "year_banner", yr=yr, n=len(yr_groups),
+                   inv=f"{yr_inv:,.2f}", cred=f"{yr_cred:,.2f}", net=f"{yr_net:,.2f}"),
+                bold=True, bg=DK_BLUE, fg=WHITE, size=11)
+            ws.row_dimensions[r].height = 22; r += 1
 
         if not yr_groups:
             _mw(ws, r, 1, ncols, _t(lang, "no_transactions", yr=yr),
@@ -505,7 +536,8 @@ def build_overview(df: pd.DataFrame, amt_col: str,
             # No G/L subtotals — groups already have their own subtotals
 
         # Year total
-        subtotal_row(_t(lang, "year_total", yr=yr), yr_net, DK_BLUE, size=10)
+        subtotal_row(_t(lang, "year_total", yr="" if single_mode else yr).strip(" —"),
+                     yr_net, DK_BLUE, size=10)
 
         # Gap between years
         ws.row_dimensions[r].height = 10; r += 1

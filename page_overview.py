@@ -102,6 +102,19 @@ def show():
         )
     single_mode = ov_mode.startswith("📋")
 
+    d1, d2, _ = st.columns([1, 1, 2])
+    with d1:
+        ref_date = st.date_input(
+            "Reference date",
+            value=datetime.date.today(),
+            key="ov_refdate",
+        )
+    with d2:
+        remove_not_due = st.checkbox(
+            "Remove invoices not yet due",
+            value=True, key="ov_remove_nd",
+        )
+
     s1, s2, s3, s4 = st.columns(4)
     with s1:
         lang = st.selectbox(
@@ -208,14 +221,17 @@ def show():
                     customer_name=customer_name.strip(),
                     account_id=(account_filter if account_filter != "All accounts" else ""),
                     lang=lang,
+                    single_mode=single_mode,
                 )
-                st.session_state["ov_result"]  = result
-                st.session_state["ov_acc"]     = account_filter
-                st.session_state["ov_from"]    = year_from
-                st.session_state["ov_to"]      = year_to
+                st.session_state["ov_result"]      = result
+                st.session_state["ov_acc"]         = account_filter
+                st.session_state["ov_from"]        = year_from
+                st.session_state["ov_to"]          = year_to
+                st.session_state["ov_single_mode"] = single_mode
                 st.session_state["ov_cname"]   = customer_name.strip()
                 st.session_state["ov_nrows"]   = n_real
                 st.session_state["ov_ready"]   = True
+                st.session_state["ov_refdate"]  = ref_date
                 st.session_state["ov_lang"]    = lang
             except Exception as e:
                 st.error(f"Error: {e}")
