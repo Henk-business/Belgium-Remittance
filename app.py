@@ -57,6 +57,7 @@ PAGES = [
     "🔍  Remittance Reconciliation",
     "📂  Account Splitter",
     "📊  Customer Overview",
+    "❓  Help & FAQ",
 ]
 
 if "active_page" in st.session_state and st.session_state["active_page"] in PAGES:
@@ -85,3 +86,6 @@ elif page == "📂  Account Splitter":
 elif page == "📊  Customer Overview":
     import page_overview
     page_overview.show()
+elif page == "❓  Help & FAQ":
+    import page_faq
+    page_faq.show()

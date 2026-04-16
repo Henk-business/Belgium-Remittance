@@ -188,47 +188,6 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
 
     for idx, (acc, acc_df) in enumerate(account_data.items()):
         tab_name = _safe_tab(str(acc), idx)
-        n = len(acc_df)
-        total = acc_df[amount_col].sum() if amount_col and amount_col in acc_df.columns else 0.0
-        clearing_col = next(
-            (col for col in acc_df.columns
-             if "clearing" in col.lower() and "doc" in col.lower()), None
-        )
-        n_open = acc_df[clearing_col].isna().sum() if clearing_col else n
-        bg = "grey" if idx % 2 == 0 else "white"
-
-        for ci, val in enumerate([acc, n, total, n_open, tab_name], 1):
-            cell = ws_sum.cell(row=r, column=ci, value=val)
-            fg_col = "C00000" if ci == 3 and isinstance(val, float) and val >= 0 else \
-                     "375623" if ci == 3 and isinstance(val, float) and val < 0 else \
-                     "1D4ED8" if ci == 5 else "000000"
-            cell.font  = Font(name="Arial", bold=(ci == 1), size=10, color=fg_col)
-            cell.fill  = PatternFill("solid", fgColor=BG.get(bg, "FFFFFF"))
-            cell.alignment = Alignment(
-                horizontal="right" if ci in (2, 3, 4) else ("center" if ci == 5 else "left"),
-                vertical="center"
-            )
-            if ci == 3:
-                cell.number_format = "#,##0.00"
-            cell.border = border
-        ws_sum.row_dimensions[r].height = 16
-        r += 1
-        grand_total += total
-        grand_lines += n
-
-    for ci, val in enumerate(["TOTAL", grand_lines, grand_total, "", ""], 1):
-        cell = ws_sum.cell(row=r, column=ci, value=val)
-        cell.font = Font(name="Arial", bold=True, size=10, color="FFFFFF")
-        cell.fill = PatternFill("solid", fgColor=BG["dk_blue"])
-        cell.alignment = Alignment(
-            horizontal="right" if ci in (2, 3) else "left", vertical="center"
-        )
-        if ci == 3:
-            cell.number_format = "#,##0.00"
-    ws_sum.row_dimensions[r].height = 18
-
-    for idx, (acc, acc_df) in enumerate(account_data.items()):
-        tab_name = _safe_tab(str(acc), idx)
 
         # No placeholders in standard layout — render everything as plain sheets.
         if False:  # placeholder logic disabled for standard download
