@@ -510,6 +510,53 @@ def find_amount_combinations(sap_file, payment_amount: float,
     """
     sap = parse_sap(sap_file)
 
+    # ── Quick check: full settlement? ────────────────────────────────────────
+    # If all open items sum to the payment, report immediately
+    all_open_check = sap[sap["is_open"] & sap["amount"].notna() & (sap["amount"] != 0)].copy()
+    full_total = round(all_open_check["amount"].sum(), 2)
+    if abs(full_total - round(float(payment_amount), 2)) <= tolerance:
+        n_inv  = (all_open_check["amount"] > 0).sum()
+        n_cred = (all_open_check["amount"] < 0).sum()
+        label  = f"{n_inv} invoice(s)"
+        if n_cred: label += f" + {n_cred} credit note(s)"
+        return [{
+            "invoices":   all_open_check.to_dict("records"),
+            "total":      full_total,
+            "diff":       abs(full_total - round(float(payment_amount), 2)),
+            "confidence": "Exact — full settlement of all open items",
+            "n":          len(all_open_check),
+            "label":      label + " (full settlement)",
+        }], sap
+
+    # ── Check settlement by due date ─────────────────────────────────────────
+    # Try grouping by due date cutoffs (15th, 30th, end of month) — customer
+    # may be paying everything due by a certain date
+    due_col = next((c for c in sap.columns if "due" in c.lower()), None)
+    if due_col:
+        import pandas as _pd
+        open_with_due = all_open_check[all_open_check[due_col].notna()].copy()
+        open_with_due[due_col] = _pd.to_datetime(open_with_due[due_col], errors="coerce")
+        cutoff_dates = sorted(open_with_due[due_col].dropna().unique())
+        for cutoff in cutoff_dates:
+            subset = open_with_due[open_with_due[due_col] <= cutoff]
+            if len(subset) == 0:
+                continue
+            sub_total = round(subset["amount"].sum(), 2)
+            if abs(sub_total - round(float(payment_amount), 2)) <= tolerance:
+                n_inv  = (subset["amount"] > 0).sum()
+                n_cred = (subset["amount"] < 0).sum()
+                label  = f"{n_inv} invoice(s)"
+                if n_cred: label += f" + {n_cred} credit note(s)"
+                cutoff_str = _pd.Timestamp(cutoff).strftime("%d/%m/%Y")
+                return [{
+                    "invoices":   subset.to_dict("records"),
+                    "total":      sub_total,
+                    "diff":       abs(sub_total - round(float(payment_amount), 2)),
+                    "confidence": f"Exact — all items due by {cutoff_str}",
+                    "n":          len(subset),
+                    "label":      label + f" due by {cutoff_str}",
+                }], sap
+
     # Use ALL open items — invoices (positive) AND credit notes (negative)
     # A payment might be: several invoices minus some credit notes = payment amount
     all_open = sap[
