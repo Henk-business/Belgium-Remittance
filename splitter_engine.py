@@ -294,8 +294,8 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
                     cell_val = val
                 cell = ws.cell(row=ri, column=ci, value=cell_val)
                 fg_col = (
-                    "166534" if is_amt and isinstance(cell_val, (int, float)) and cell_val >= 0
-                    else "B91C1C" if is_amt and isinstance(cell_val, (int, float)) and cell_val < 0
+                    "FFC00000" if is_amt and isinstance(cell_val, (int, float)) and cell_val >= 0
+                    else "FF375623" if is_amt and isinstance(cell_val, (int, float)) and cell_val < 0
                     else "000000"
                 )
                 cell.font = Font(name="Arial", size=9, color=fg_col)

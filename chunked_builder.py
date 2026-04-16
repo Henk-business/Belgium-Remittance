@@ -24,8 +24,8 @@ LT_BLUE  = "D6E4F0"
 YELLOW   = "FFFF00"
 WHITE    = "FFFFFF"
 GREY     = "F2F2F2"
-GREEN_FG = "166534"
-RED_FG   = "B91C1C"
+GREEN_FG = "FF375623"
+RED_FG   = "FFC00000"
 
 def _thin():
     s = Side(style="thin", color="CBD5E1")
@@ -275,7 +275,7 @@ def build_chunked_sheet(acc_df: pd.DataFrame, account_id: str,
             elif ci == amount_ci:
                 _cell(ws, r, ci, chunk_total, bg=YELLOW, bold=True,
                       fmt="#,##0.00", ha="right", sz=10,
-                      fg=GREEN_FG if chunk_total >= 0 else RED_FG, border=True)
+                      fg=RED_FG if chunk_total >= 0 else GREEN_FG, border=True)
                 # Currency symbol to the left of amount
                 _cell(ws, r, amount_ci - 1, "\u20ac" if amount_ci > 1 else "",
                       bg=YELLOW, bold=True, sz=10, border=True) if amount_ci > 1 else None
@@ -305,7 +305,7 @@ def build_chunked_sheet(acc_df: pd.DataFrame, account_id: str,
         c = ws.cell(row=total_row, column=total_col)
         c.value     = f"\u20ac  {grand_total:,.2f}"
         c.font      = Font(name="Arial", bold=True, size=18,
-                           color=GREEN_FG if grand_total >= 0 else RED_FG)
+                           color=RED_FG if grand_total >= 0 else GREEN_FG)
         c.fill      = PatternFill("solid", fgColor=YELLOW)
         c.alignment = Alignment(horizontal="center", vertical="center")
 

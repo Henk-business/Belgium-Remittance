@@ -28,8 +28,8 @@ GREY_HDR  = "DDDDDD"   # column header fill
 YELLOW    = "FFEE09"   # grand total fill
 WHITE     = "FFFFFF"
 # Belgian convention: positive (invoice) = red, negative (credit) = green
-POS_FG    = "C00000"   # red for invoices (positive)
-NEG_FG    = "375623"   # green for credits (negative)
+POS_FG    = "FFC00000"   # red for invoices (positive)
+NEG_FG    = "FF375623"   # green for credits (negative)
 BLACK_FG  = "000000"
 
 # Template column widths (cols A-M)
