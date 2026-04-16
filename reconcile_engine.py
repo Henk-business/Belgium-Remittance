@@ -488,3 +488,226 @@ def build_statement(results, today=None):
     wb.save(out)
     out.seek(0)
     return out
+
+
+# ── AMOUNT-ONLY MATCHING ──────────────────────────────────────────────────────
+
+def find_amount_combinations(sap_file, payment_amount: float,
+                              tolerance: float = 0.05,
+                              max_results: int = 5):
+    """
+    Given a payment amount with no remittance, find combinations of open SAP
+    invoices whose amounts sum to the payment (within tolerance).
+
+    Strategy:
+    1. Exact single-invoice match first.
+    2. Two-invoice combinations.
+    3. Greedy subset-sum for larger combinations.
+    4. All returned sorted by confidence (closeness to payment amount).
+
+    Returns list of dicts:
+        {invoices: [rows], total: float, diff: float, confidence: str}
+    """
+    sap = parse_sap(sap_file)
+
+    # Only consider open positive invoices (RV/RU type)
+    inv = sap[
+        sap["is_open"] &
+        sap["amount"].notna() &
+        (sap["amount"] > 0)
+    ].copy()
+
+    # Also consider credits (negative) — they may offset invoices
+    all_open = sap[sap["is_open"] & sap["amount"].notna()].copy()
+
+    amounts = inv["amount"].round(2).tolist()
+    target  = round(float(payment_amount), 2)
+    results = []
+    seen    = set()  # deduplicate by frozenset of indices
+
+    def _add(indices, rows, total):
+        key = frozenset(indices)
+        if key in seen:
+            return
+        seen.add(key)
+        diff = abs(total - target)
+        if diff <= tolerance + 0.01:
+            results.append({
+                "invoices":   rows.to_dict("records"),
+                "total":      round(total, 2),
+                "diff":       round(diff, 2),
+                "confidence": "Exact" if diff < 0.01 else f"±€{diff:.2f}",
+                "n":          len(indices),
+            })
+
+    idx_list = inv.index.tolist()
+
+    # 1. Exact single match
+    for i, idx in enumerate(idx_list):
+        amt = amounts[i]
+        if abs(amt - target) <= tolerance:
+            _add([idx], inv.loc[[idx]], amt)
+
+    # 2. Two-invoice combinations (up to 500 pairs for speed)
+    from itertools import combinations
+    pair_limit = min(len(idx_list), 200)
+    for i, j in combinations(range(pair_limit), 2):
+        total = round(amounts[i] + amounts[j], 2)
+        if abs(total - target) <= tolerance:
+            idxs = [idx_list[i], idx_list[j]]
+            _add(idxs, inv.loc[idxs], total)
+
+    # 3. Greedy subset-sum — sort by descending amount, pick greedily
+    # Run multiple times with different starting points for diversity
+    sorted_inv = inv.sort_values("amount", ascending=False)
+    for _ in range(10):
+        remaining = target
+        chosen_idx = []
+        for idx, row in sorted_inv.iterrows():
+            amt = round(row["amount"], 2)
+            if amt <= remaining + tolerance:
+                chosen_idx.append(idx)
+                remaining = round(remaining - amt, 2)
+                if abs(remaining) <= tolerance:
+                    break
+        if chosen_idx and abs(remaining) <= tolerance + 0.01:
+            total = round(sum(inv.loc[chosen_idx, "amount"]), 2)
+            _add(chosen_idx, inv.loc[chosen_idx], total)
+        # Shuffle slightly for next iteration
+        sorted_inv = sorted_inv.sample(frac=1)
+
+    # Sort by diff asc, then fewest invoices
+    results.sort(key=lambda x: (x["diff"], x["n"]))
+    return results[:max_results], sap
+
+
+def build_amount_match_report(matches, payment_amount: float,
+                               customer_name: str = "",
+                               today=None) -> BytesIO:
+    """Build an Excel showing the best invoice combinations for the payment."""
+    if today is None:
+        today = datetime.date.today()
+    today_str = pd.Timestamp(today).strftime("%d/%m/%Y")
+
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    DK = "FF1F3864"; MD = "FF2E75B6"; WHITE = "FFFFFFFF"
+    GREY = "FFF2F2F2"; BLK = "FF000000"
+    RED = "FFC00000"; GRN = "FF375623"
+
+    def fill(rgb): return PatternFill("solid", fgColor=rgb)
+    def font(bold=False, color=BLK, size=10):
+        return Font(name="Arial", bold=bold, color=color, size=size)
+    def aln(ha="left"):
+        return Alignment(horizontal=ha, vertical="center")
+    def thin():
+        s = Side(style="thin", color="D0D0D0")
+        return Border(left=s,right=s,top=s,bottom=s)
+    def mw(ws, row, c1, c2, val, bold=False, bg=WHITE, fg=BLK, sz=10, ha="left"):
+        ws.merge_cells(f"{get_column_letter(c1)}{row}:{get_column_letter(c2)}{row}")
+        cell = ws.cell(row=row, column=c1, value=val)
+        cell.font = font(bold=bold, color=fg, size=sz)
+        cell.fill = fill(bg); cell.alignment = aln(ha); cell.border = thin()
+        for ci in range(c1+1, c2+1):
+            ws.cell(row,ci).fill = fill(bg); ws.cell(row,ci).border = thin()
+
+    wb = openpyxl.Workbook()
+    first = True
+
+    for mi, match in enumerate(matches, 1):
+        ws = wb.active if first else wb.create_sheet()
+        first = False
+        label = f"Option {mi} ({match['confidence']})"
+        ws.title = label[:31]
+
+        # Column widths
+        cols = ["Account","Document Number","Assignment","Document Date",
+                "Net due date","Document Type","Amount","Reference"]
+        widths = [12,18,14,13,13,15,18,20]
+        for ci, w in enumerate(widths, 1):
+            ws.column_dimensions[get_column_letter(ci)].width = w
+        ncols = len(cols)
+
+        # Title
+        mw(ws,1,1,ncols,
+           f"{customer_name or 'Customer'}  —  Payment €{payment_amount:,.2f}  —  {today_str}",
+           bold=True, bg=DK, fg=WHITE, sz=13)
+        ws.row_dimensions[1].height = 32
+
+        # Subtitle
+        mw(ws,2,1,ncols,
+           f"{label}  ·  {match['n']} invoice(s)  ·  Total €{match['total']:,.2f}  ·  Difference €{match['diff']:,.2f}",
+           bold=False, bg=MD, fg=WHITE, sz=9)
+        ws.row_dimensions[2].height = 16
+        ws.row_dimensions[3].height = 6
+
+        # Headers
+        for ci, h in enumerate(cols, 1):
+            cell = ws.cell(4, ci, value=h)
+            cell.font = font(bold=True, color=WHITE, size=9)
+            cell.fill = fill(MD); cell.alignment = aln("center"); cell.border = thin()
+        ws.row_dimensions[4].height = 15
+
+        # Data rows
+        key_map = {
+            "Account":        "account",
+            "Document Number":"doc_number_str",
+            "Assignment":     "ref",
+            "Document Date":  "doc_date",
+            "Net due date":   "net_due",
+            "Document Type":  "doc_type",
+            "Amount":         "amount",
+            "Reference":      "context",
+        }
+        for ri, inv_row in enumerate(match["invoices"]):
+            r = 5 + ri
+            row_fill = WHITE if ri % 2 == 0 else GREY
+            for ci, col in enumerate(cols, 1):
+                key = key_map.get(col, col.lower())
+                val = inv_row.get(key, "")
+                is_amt = (col == "Amount")
+                is_date = col in ("Document Date","Net due date")
+                if is_amt:
+                    try: val = float(val)
+                    except: val = 0.0
+                    fg = RED if val >= 0 else GRN
+                elif is_date:
+                    try: val = pd.Timestamp(val).to_pydatetime()
+                    except: pass
+                    fg = BLK
+                else:
+                    fg = BLK
+                cell = ws.cell(r, ci, value=val)
+                cell.font = font(color=fg, size=9)
+                cell.fill = fill(row_fill)
+                cell.alignment = aln("right" if is_amt else "left")
+                cell.border = thin()
+                if is_amt: cell.number_format = "#,##0.00"
+                elif is_date and isinstance(val, datetime.datetime):
+                    cell.number_format = "DD/MM/YYYY"
+            ws.row_dimensions[r].height = 13
+
+        # Total row
+        r_tot = 5 + len(match["invoices"])
+        for ci in range(1, ncols+1):
+            cell = ws.cell(r_tot, ci)
+            cell.fill = fill(DK); cell.border = thin()
+            if ci == 1:
+                cell.value = "TOTAL"
+                cell.font = font(bold=True, color=WHITE, size=10)
+                cell.alignment = aln("left")
+            elif ci == 7:  # Amount col
+                cell.value = match["total"]
+                cell.font = font(bold=True, color=WHITE, size=10)
+                cell.alignment = aln("right")
+                cell.number_format = "#,##0.00"
+            else:
+                cell.font = font(bold=True, color=WHITE, size=10)
+        ws.row_dimensions[r_tot].height = 16
+        ws.freeze_panes = "A5"
+
+    out = BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return out

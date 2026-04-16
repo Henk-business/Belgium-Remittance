@@ -4,13 +4,25 @@ from io import BytesIO
 import datetime
 import traceback
 
-from reconcile_engine import run_reconciliation, build_recon_report, build_statement
+from reconcile_engine import (run_reconciliation, build_recon_report, build_statement,
+                               find_amount_combinations, build_amount_match_report)
 from common import get_email, LANG_LABELS, mailto_link
 
 
 def show():
     st.markdown("## 🔍 Remittance Reconciliation")
     st.caption("Upload a SAP export and a client remittance. SAP is the source of truth.")
+
+    tab1, tab2 = st.tabs(["📄 Remittance matching", "💰 Amount-only matching"])
+
+    with tab1:
+        _show_remittance()
+
+    with tab2:
+        _show_amount_match()
+
+
+def _show_remittance():
 
     # ── FILES ────────────────────────────────────────────────────────────────
     st.markdown("### 1 · Upload files")
@@ -190,3 +202,130 @@ def show():
         )
     else:
         st.caption("Enter the customer email above to get a one-click mailto link.")
+
+
+def _show_amount_match():
+    st.markdown("### 💰 Amount-only matching")
+    st.caption(
+        "Customer paid without sending a remittance? Enter the payment amount and upload "
+        "the SAP open items — the system will find which invoice combinations add up to the payment."
+    )
+
+    st.markdown("### 1 · Upload SAP export")
+    sap_file = st.file_uploader(
+        "SAP export (FBL5N open items)", type=["xlsx","xls"],
+        label_visibility="collapsed", key="amt_sap"
+    )
+
+    st.markdown("### 2 · Payment details")
+    a1, a2, a3 = st.columns(3)
+    with a1:
+        cname = st.text_input("Customer name", key="amt_cname", placeholder="e.g. Acme Corp")
+    with a2:
+        pmt_amt = st.number_input(
+            "Payment amount (€)", min_value=0.01, value=1000.0,
+            step=0.01, format="%.2f", key="amt_pmt"
+        )
+    with a3:
+        tolerance = st.number_input(
+            "Tolerance (€)", min_value=0.0, value=0.05,
+            step=0.01, format="%.2f", key="amt_tol",
+            help="Maximum allowed difference between invoice total and payment amount"
+        )
+
+    run_col, _ = st.columns([1, 2])
+    with run_col:
+        run = st.button("🔍  Find matching invoices", use_container_width=True,
+                        type="primary", key="amt_run")
+
+    if run:
+        if not sap_file:
+            st.error("Please upload the SAP export.")
+        else:
+            with st.spinner("Searching for matching invoice combinations…"):
+                try:
+                    from io import BytesIO
+                    matches, sap_df = find_amount_combinations(
+                        BytesIO(sap_file.read()),
+                        float(pmt_amt),
+                        tolerance=float(tolerance),
+                    )
+                    st.session_state["amt_matches"]  = matches
+                    st.session_state["amt_pmt"]      = float(pmt_amt)
+                    st.session_state["amt_cname"]    = cname.strip()
+                    st.session_state["amt_n_open"]   = len(sap_df[sap_df["is_open"]])
+                except Exception as e:
+                    st.error(f"Error: {e}")
+                    import traceback
+                    with st.expander("Detail"):
+                        st.code(traceback.format_exc())
+
+    if "amt_matches" not in st.session_state:
+        return
+
+    matches  = st.session_state["amt_matches"]
+    pmt_amt  = st.session_state["amt_pmt"]
+    cname    = st.session_state["amt_cname"]
+    n_open   = st.session_state.get("amt_n_open", 0)
+
+    st.markdown("---")
+    if not matches:
+        st.warning(
+            f"No invoice combinations found that sum to €{pmt_amt:,.2f} "
+            f"(within ±€{tolerance:.2f}). Try increasing the tolerance or check "
+            f"whether the payment includes a credit note offset."
+        )
+        return
+
+    st.success(f"Found {len(matches)} possible combination(s) from {n_open} open invoices.")
+
+    for i, match in enumerate(matches, 1):
+        conf_color = "🟢" if match["diff"] < 0.01 else "🟡"
+        with st.expander(
+            f"{conf_color} Option {i} — {match['n']} invoice(s)  ·  "
+            f"Total €{match['total']:,.2f}  ·  {match['confidence']}",
+            expanded=(i == 1)
+        ):
+            rows = []
+            for inv in match["invoices"]:
+                rows.append({
+                    "Document №":   inv.get("doc_number_str",""),
+                    "Assignment":   inv.get("ref",""),
+                    "Doc Date":     inv.get("doc_date",""),
+                    "Net Due":      inv.get("net_due",""),
+                    "Type":         inv.get("doc_type",""),
+                    "Amount (€)":   inv.get("amount",0),
+                })
+            import pandas as pd
+            st.dataframe(
+                pd.DataFrame(rows),
+                use_container_width=True, hide_index=True
+            )
+            st.caption(
+                f"Sum of selected invoices: **€{match['total']:,.2f}**  ·  "
+                f"Payment amount: **€{pmt_amt:,.2f}**  ·  "
+                f"Difference: **€{match['diff']:,.2f}**"
+            )
+
+    # Download Excel with all options
+    st.markdown("---")
+    if st.button("📥  Download all options as Excel", key="amt_dl_btn"):
+        try:
+            report = build_amount_match_report(
+                matches, pmt_amt,
+                customer_name=cname,
+                today=datetime.date.today(),
+            )
+            st.session_state["amt_report"] = report
+        except Exception as e:
+            st.error(f"Error building report: {e}")
+
+    if "amt_report" in st.session_state:
+        safe = (cname or "Customer").replace(" ","_")[:20]
+        st.download_button(
+            "⬇  Download match report",
+            data=st.session_state["amt_report"].getvalue(),
+            file_name=f"AmountMatch_{safe}_{pmt_amt:.0f}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="amt_dl",
+        )
