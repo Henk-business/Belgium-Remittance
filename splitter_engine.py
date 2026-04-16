@@ -185,32 +185,6 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
     today_str = pd.Timestamp(today).strftime("%d/%m/%Y")
 
     wb = openpyxl.Workbook()
-    ws_sum = wb.active
-    ws_sum.title = "Summary"
-
-    accounts = list(account_data.keys())
-    col_w(ws_sum, [18, 10, 18, 12, 14])
-
-    r = 1
-    mr(ws_sum, r, 1, 5,
-       title_prefix + "SAP ACCOUNT OVERVIEW  \u2014  " + str(len(accounts)) + " accounts  \u00b7  " + today_str,
-       bold=True, bg="dk_blue", fg="white", sz=13, ha="center")
-    ws_sum.row_dimensions[r].height = 34
-    r += 1
-    mr(ws_sum, r, 1, 5, "Invoices not yet due have been removed.",
-       bg="md_blue", fg="white", sz=9, ha="center", italic=True)
-    ws_sum.row_dimensions[r].height = 16
-    r += 2
-
-    hdr_row(ws_sum, r, ["Account", "Lines", "Total Amount (\u20ac)", "Open Items", "Sheet Name"])
-    r += 1
-
-    grand_total = 0.0
-    grand_lines = 0
-
-    from openpyxl.styles import Border, Side
-    thin = Side(style="thin", color="CBD5E1")
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
     for idx, (acc, acc_df) in enumerate(account_data.items()):
         tab_name = _safe_tab(str(acc), idx)
