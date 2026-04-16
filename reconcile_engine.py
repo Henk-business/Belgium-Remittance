@@ -510,20 +510,23 @@ def find_amount_combinations(sap_file, payment_amount: float,
     """
     sap = parse_sap(sap_file)
 
-    # Only consider open positive invoices (RV/RU type)
-    inv = sap[
+    # Use ALL open items — invoices (positive) AND credit notes (negative)
+    # A payment might be: several invoices minus some credit notes = payment amount
+    all_open = sap[
         sap["is_open"] &
         sap["amount"].notna() &
-        (sap["amount"] > 0)
+        (sap["amount"] != 0)
     ].copy()
 
-    # Also consider credits (negative) — they may offset invoices
-    all_open = sap[sap["is_open"] & sap["amount"].notna()].copy()
+    # Separate for labelling but search across both
+    inv_idx  = all_open[all_open["amount"] > 0].index.tolist()
+    cred_idx = all_open[all_open["amount"] < 0].index.tolist()
 
-    amounts = inv["amount"].round(2).tolist()
-    target  = round(float(payment_amount), 2)
-    results = []
-    seen    = set()  # deduplicate by frozenset of indices
+    amounts  = all_open["amount"].round(2).tolist()
+    idx_list = all_open.index.tolist()
+    target   = round(float(payment_amount), 2)
+    results  = []
+    seen     = set()
 
     def _add(indices, rows, total):
         key = frozenset(indices)
@@ -532,51 +535,71 @@ def find_amount_combinations(sap_file, payment_amount: float,
         seen.add(key)
         diff = abs(total - target)
         if diff <= tolerance + 0.01:
+            n_inv  = sum(1 for i in indices if i in set(inv_idx))
+            n_cred = sum(1 for i in indices if i in set(cred_idx))
+            label  = f"{n_inv} invoice(s)"
+            if n_cred:
+                label += f" + {n_cred} credit note(s)"
             results.append({
                 "invoices":   rows.to_dict("records"),
                 "total":      round(total, 2),
                 "diff":       round(diff, 2),
                 "confidence": "Exact" if diff < 0.01 else f"±€{diff:.2f}",
                 "n":          len(indices),
+                "label":      label,
             })
 
-    idx_list = inv.index.tolist()
+    amt_map = {idx: round(all_open.at[idx, "amount"], 2) for idx in idx_list}
 
-    # 1. Exact single match
-    for i, idx in enumerate(idx_list):
-        amt = amounts[i]
+    # 1. Exact single match (invoice or credit)
+    for idx in idx_list:
+        amt = amt_map[idx]
         if abs(amt - target) <= tolerance:
-            _add([idx], inv.loc[[idx]], amt)
+            _add([idx], all_open.loc[[idx]], amt)
 
-    # 2. Two-invoice combinations (up to 500 pairs for speed)
+    # 2. Two-item combinations — invoices only, then invoice+credit
     from itertools import combinations
-    pair_limit = min(len(idx_list), 200)
-    for i, j in combinations(range(pair_limit), 2):
-        total = round(amounts[i] + amounts[j], 2)
+    pair_limit = min(len(inv_idx), 200)
+    # invoice + invoice
+    for i, j in combinations(inv_idx[:pair_limit], 2):
+        total = round(amt_map[i] + amt_map[j], 2)
         if abs(total - target) <= tolerance:
-            idxs = [idx_list[i], idx_list[j]]
-            _add(idxs, inv.loc[idxs], total)
+            _add([i, j], all_open.loc[[i, j]], total)
+    # invoice + credit note
+    cred_limit = min(len(cred_idx), 50)
+    for inv_i in inv_idx[:pair_limit]:
+        for cred_i in cred_idx[:cred_limit]:
+            total = round(amt_map[inv_i] + amt_map[cred_i], 2)
+            if abs(total - target) <= tolerance:
+                _add([inv_i, cred_i], all_open.loc[[inv_i, cred_i]], total)
 
-    # 3. Greedy subset-sum — sort by descending amount, pick greedily
-    # Run multiple times with different starting points for diversity
-    sorted_inv = inv.sort_values("amount", ascending=False)
-    for _ in range(10):
-        remaining = target
-        chosen_idx = []
-        for idx, row in sorted_inv.iterrows():
+    # 3. Greedy subset-sum across all open items (invoices + credits)
+    # Sort invoices desc, credits asc (largest credits last so they offset)
+    sorted_all = all_open.sort_values("amount", ascending=False)
+    for _ in range(15):
+        remaining   = target
+        chosen_idx  = []
+        for idx, row in sorted_all.iterrows():
             amt = round(row["amount"], 2)
-            if amt <= remaining + tolerance:
+            # Add invoices that bring us closer to target
+            # Add credits only if they're needed to reduce an overshoot
+            if amt > 0 and amt <= remaining + tolerance:
+                chosen_idx.append(idx)
+                remaining = round(remaining - amt, 2)
+                if abs(remaining) <= tolerance:
+                    break
+            elif amt < 0 and remaining < -tolerance:
+                # We've overshot — a credit can bring us back
                 chosen_idx.append(idx)
                 remaining = round(remaining - amt, 2)
                 if abs(remaining) <= tolerance:
                     break
         if chosen_idx and abs(remaining) <= tolerance + 0.01:
-            total = round(sum(inv.loc[chosen_idx, "amount"]), 2)
-            _add(chosen_idx, inv.loc[chosen_idx], total)
-        # Shuffle slightly for next iteration
-        sorted_inv = sorted_inv.sample(frac=1)
+            total = round(sum(all_open.loc[chosen_idx, "amount"]), 2)
+            _add(chosen_idx, all_open.loc[chosen_idx], total)
+        sorted_all = sorted_all.sample(frac=1)
 
-    # Sort by diff asc, then fewest invoices
+    # Sort by diff asc, then fewest items
     results.sort(key=lambda x: (x["diff"], x["n"]))
     return results[:max_results], sap
 

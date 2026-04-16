@@ -282,7 +282,7 @@ def _show_amount_match():
     for i, match in enumerate(matches, 1):
         conf_color = "🟢" if match["diff"] < 0.01 else "🟡"
         with st.expander(
-            f"{conf_color} Option {i} — {match['n']} invoice(s)  ·  "
+            f"{conf_color} Option {i} — {match.get('label', str(match['n']) + ' item(s)')}  ·  "
             f"Total €{match['total']:,.2f}  ·  {match['confidence']}",
             expanded=(i == 1)
         ):
