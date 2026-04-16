@@ -290,10 +290,10 @@ def build_flat_workbook(account_dfs: dict, amount_col: str,
     today_str = pd.Timestamp(today).strftime("%d/%m/%Y")
 
     from splitter_engine import translate_doc_types
-    # Concatenate all account dfs
+    # Concatenate all account dfs with translation applied
     all_dfs = []
     for acc_id, acc_df in account_dfs.items():
-        all_dfs.append(acc_df.copy())
+        all_dfs.append(translate_doc_types(acc_df.copy(), lang))
     combined = pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
 
     if len(combined) == 0:
