@@ -23,15 +23,15 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # ── COLOURS ───────────────────────────────────────────────────────────────────
-DK_BLUE  = "1F3864"
-MD_BLUE  = "2E75B6"
-LT_BLUE  = "BDD7EE"
+DK_BLUE  = "FF1F3864"
+MD_BLUE  = "FF2E75B6"
+LT_BLUE  = "FFBDD7EE"
 YELLOW   = "FFEE09"
-WHITE    = "FFFFFF"
-GREY     = "F2F2F2"
-POS_FG   = "C00000"   # red   – invoices / positive
-NEG_FG   = "375623"   # green – credits / payments / negative
-BLACK_FG = "000000"
+WHITE    = "FFFFFFFF"
+GREY     = "FFF2F2F2"
+POS_FG   = "FFC00000"   # red   – invoices / positive
+NEG_FG   = "FF375623"   # green – credits / payments / negative
+BLACK_FG = "FF000000"
 
 # ── STRIP COLUMNS (same as splitter, but KEEP the overview-specific ones) ─────
 STRIP_COLS = {
