@@ -589,14 +589,20 @@ def find_amount_combinations(sap_file, payment_amount: float,
             # Try excluding a subset of candidates to reach exact target
             # Only consider items with |amount| small enough to be part of the difference
             _excl_tgt_cents = round((_total - _tgt) * 100)
-            _max_abs = abs(_total - _tgt) * 1.5 + 100
+            _max_abs = abs(_total - _tgt) * 1.1 + 1   # tight filter: amount can't exceed the gap
             _cands = [(str(r['doc_number_str']), round(float(r['amount'])*100))
                       for _, r in _best_subset.iterrows()
                       if abs(float(r['amount'])) <= _max_abs]
+            # Safety: if too many candidates, limit search depth to avoid hanging
+            import time as _time
+            _search_start = _time.time()
+            _max_search_secs = 8  # give up after 8 seconds
             _found_excl = None
             for _n in range(1, min(13, len(_cands)+1)):
                 if _found_excl: break
+                if _time.time() - _search_start > _max_search_secs: break
                 for _combo in _combs(_cands, _n):
+                    if _time.time() - _search_start > _max_search_secs: break
                     if sum(a for _,a in _combo) == _excl_tgt_cents:
                         _excl_ids  = {d for d,_ in _combo}
                         _kept      = _best_subset[~_best_subset['doc_number_str'].astype(str).isin(_excl_ids)]
