@@ -220,11 +220,11 @@ def _show_amount_match():
     st.markdown("### 2 · Payment details")
     a1, a2, a3 = st.columns(3)
     with a1:
-        cname = st.text_input("Customer name", key="amt_cname", placeholder="e.g. Acme Corp")
+        cname = st.text_input("Customer name", key="amt_cname_w", placeholder="e.g. Acme Corp")
     with a2:
         pmt_amt = st.number_input(
             "Payment amount (€)", min_value=0.01, value=1000.0,
-            step=0.01, format="%.2f", key="amt_pmt"
+            step=0.01, format="%.2f", key="amt_pmt_w"
         )
     with a3:
         tolerance = st.number_input(
@@ -251,8 +251,8 @@ def _show_amount_match():
                         tolerance=float(tolerance),
                     )
                     st.session_state["amt_matches"]  = matches
-                    st.session_state["amt_pmt"]      = float(pmt_amt)
-                    st.session_state["amt_cname"]    = cname.strip()
+                    st.session_state["amt_pmt_s"]      = float(pmt_amt)
+                    st.session_state["amt_cname_s"]    = cname.strip()
                     st.session_state["amt_n_open"]   = len(sap_df[sap_df["is_open"]])
                 except Exception as e:
                     st.error(f"Error: {e}")
@@ -264,8 +264,8 @@ def _show_amount_match():
         return
 
     matches  = st.session_state["amt_matches"]
-    pmt_amt  = st.session_state["amt_pmt"]
-    cname    = st.session_state["amt_cname"]
+    pmt_amt  = st.session_state["amt_pmt_s"]
+    cname    = st.session_state["amt_cname_s"]
     n_open   = st.session_state.get("amt_n_open", 0)
 
     st.markdown("---")
