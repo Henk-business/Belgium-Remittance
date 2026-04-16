@@ -71,6 +71,26 @@ def show():
 
     st.write("")
     col3, col4 = st.columns(2)
+    with col4:
+        st.markdown("""
+        <div class="tool-card">
+            <div class="icon">❓</div>
+            <h3>Help & FAQ</h3>
+            <p>Not sure where to start or how something works? The FAQ covers
+               all three tools in plain language — what they do, when to use
+               them, and how to get the best results.</p>
+            <div class="feat">Step-by-step guide for each tool</div>
+            <div class="feat">Explains templates, account groups, and chunking</div>
+            <div class="feat">Grouping logic and year assignment explained</div>
+            <div class="feat">Troubleshooting common issues</div>
+            <div class="feat">General questions about storage and SAP exports</div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.write("")
+        if st.button("Open Help & FAQ →", use_container_width=True, key="btn_faq"):
+            st.session_state["active_page"] = "❓  Help & FAQ"
+            st.rerun()
+
     with col3:
         st.markdown("""
         <div class="tool-card">
