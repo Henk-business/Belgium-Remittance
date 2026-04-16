@@ -558,74 +558,79 @@ def find_amount_combinations(sap_file, payment_amount: float,
                 }], sap
 
 
-    # ── Closest due-date match (within 5%) ──────────────────────────────────
+    # ── Closest due-date match + smart subset exclusion ──────────────────
     if due_col:
         import pandas as _pd3
+        from itertools import combinations as _combs
         open_wd = all_open_check[all_open_check[due_col].notna()].copy()
         open_wd[due_col] = _pd3.to_datetime(open_wd[due_col], errors='coerce')
-        _best_diff = None
-        _best_res  = None
+        _best_diff, _best_cutoff, _best_subset = None, None, None
         for _cutoff in sorted(open_wd[due_col].dropna().unique()):
-            _subset    = open_wd[open_wd[due_col] <= _cutoff]
-            if len(_subset) == 0: continue
-            _sub_total = round(_subset['amount'].sum(), 2)
-            _diff      = abs(_sub_total - round(float(payment_amount), 2))
-            if _best_diff is None or _diff < _best_diff:
-                _best_diff = _diff
-                _n_inv  = (_subset['amount'] > 0).sum()
-                _n_cred = (_subset['amount'] < 0).sum()
-                _lbl    = f'{_n_inv} invoice(s)'
-                if _n_cred: _lbl += f' + {_n_cred} credit note(s)'
-                _cs     = _pd3.Timestamp(_cutoff).strftime('%d/%m/%Y')
-                _best_res = {
-                    'invoices':   _subset.to_dict('records'),
-                    'total':      _sub_total,
-                    'diff':       _diff,
-                    'confidence': f'Near match — all items due by {_cs} (\u00b1\u20ac{_diff:,.2f} difference — customer may have excluded some items)',
-                    'n':          len(_subset),
-                    'label':      _lbl + f' due by {_cs}',
-                }
-        if _best_res is not None and _best_diff <= float(payment_amount) * 0.05:
-            # Also try: exclude a small subset of credits from the near-match
-            # to see if we can reach the exact payment amount
-            # (credits may have been added after the customer submitted payment)
-            from itertools import combinations as _combs
-            _near_subset = _best_res['invoices']
-            _near_df = _pd3.DataFrame(_near_subset)
-            if 'amount' in _near_df.columns:
-                _near_credits = _near_df[_near_df['amount'] < 0]
-                _excl_target = round(float(_best_res['total']) - float(payment_amount), 2)
-                _exact_found = False
-                for _n in range(1, min(7, len(_near_credits)+1)):
-                    if _exact_found: break
-                    _c_items = list(_near_credits.iterrows())
-                    for _combo in _combs(_c_items, _n):
-                        _combo_sum = round(sum(r['amount'] for _,r in _combo), 2)
-                        if abs(_combo_sum - _excl_target) <= 0.02:
-                            # Found exact match by excluding these credits
-                            _excl_indices = {str(r.get('doc_number_str','')) for _,r in _combo}
-                            _kept = [r for r in _near_subset
-                                     if str(r.get('doc_number_str','')) not in _excl_indices]
-                            _kept_total = round(sum(r['amount'] for r in _kept), 2)
-                            _excl_amts  = [round(r['amount'],2) for _,r in _combo]
-                            _n_inv  = sum(1 for r in _kept if r['amount'] > 0)
-                            _n_cred = sum(1 for r in _kept if r['amount'] < 0)
-                            _lbl2   = f'{_n_inv} invoice(s)'
-                            if _n_cred: _lbl2 += f' + {_n_cred} credit note(s)'
-                            _cs2 = _pd3.Timestamp(_cutoff).strftime('%d/%m/%Y')
-                            return [{
-                                'invoices':   _kept,
-                                'total':      _kept_total,
-                                'diff':       abs(_kept_total - float(payment_amount)),
-                                'confidence': f'Exact \u2014 {_lbl2} due by {_cs2} (excluding {_n} credit note(s) totalling \u20ac{abs(_combo_sum):,.2f} added after payment)',
-                                'n':          len(_kept),
-                                'label':      _lbl2 + f' due by {_cs2}',
-                                'excluded_credits': _excl_amts,
-                            }], sap
-                            _exact_found = True
-                            break
-            return [_best_res], sap
+            _sub = open_wd[open_wd[due_col] <= _cutoff]
+            if len(_sub) == 0: continue
+            _d = abs(round(_sub['amount'].sum(), 2) - round(float(payment_amount), 2))
+            if _best_diff is None or _d < _best_diff:
+                _best_diff, _best_cutoff, _best_subset = _d, _cutoff, _sub
 
+        if _best_subset is not None and _best_diff is not None and _best_diff <= float(payment_amount) * 0.05:
+            _tgt   = round(float(payment_amount), 2)
+            _cs    = _pd3.Timestamp(_best_cutoff).strftime('%d/%m/%Y')
+            _total = round(_best_subset['amount'].sum(), 2)
+
+            # Exact match — nothing to exclude
+            if abs(_total - _tgt) < 0.01:
+                _ni = (_best_subset['amount'] > 0).sum()
+                _nc = (_best_subset['amount'] < 0).sum()
+                _lb = f'{_ni} invoice(s)' + (f' + {_nc} credit note(s)' if _nc else '')
+                return [{'invoices': _best_subset.to_dict('records'), 'total': _total,
+                         'diff': 0.0, 'confidence': f'Exact — all items due by {_cs}',
+                         'n': len(_best_subset), 'label': _lb + f' due by {_cs}'}], sap
+
+            # Try excluding a subset of candidates to reach exact target
+            # Only consider items with |amount| small enough to be part of the difference
+            _excl_tgt_cents = round((_total - _tgt) * 100)
+            _max_abs = abs(_total - _tgt) * 1.5 + 100
+            _cands = [(str(r['doc_number_str']), round(float(r['amount'])*100))
+                      for _, r in _best_subset.iterrows()
+                      if abs(float(r['amount'])) <= _max_abs]
+            _found_excl = None
+            for _n in range(1, min(13, len(_cands)+1)):
+                if _found_excl: break
+                for _combo in _combs(_cands, _n):
+                    if sum(a for _,a in _combo) == _excl_tgt_cents:
+                        _excl_ids  = {d for d,_ in _combo}
+                        _kept      = _best_subset[~_best_subset['doc_number_str'].astype(str).isin(_excl_ids)]
+                        _kept_tot  = round(_kept['amount'].sum(), 2)
+                        if abs(_kept_tot - _tgt) <= 0.02:
+                            _ni = (_kept['amount'] > 0).sum()
+                            _nc = (_kept['amount'] < 0).sum()
+                            _lb = f'{_ni} invoice(s)' + (f' + {_nc} credit note(s)' if _nc else '')
+                            _ea = [a/100 for _,a in _combo]
+                            _ed = [d for d,_ in _combo]
+                            _nec = sum(1 for a in _ea if a < 0)
+                            _nep = sum(1 for a in _ea if a > 0)
+                            _el  = []
+                            if _nec: _el.append(f'{_nec} credit note(s)')
+                            if _nep: _el.append(f'{_nep} clearing item(s)')
+                            _found_excl = {
+                                'invoices': _kept.to_dict('records'), 'total': _kept_tot,
+                                'diff': abs(_kept_tot - _tgt),
+                                'confidence': f'Exact — {_lb} due by {_cs} (excluded {", ".join(_el)} totalling €{abs(sum(_ea)):,.2f} not included in payment)',
+                                'n': len(_kept), 'label': _lb + f' due by {_cs}',
+                                'excluded_credits': _ea, 'excluded_docs': _ed,
+                            }
+                            break
+            if _found_excl:
+                return [_found_excl], sap
+
+            # Near-match fallback
+            _ni = (_best_subset['amount'] > 0).sum()
+            _nc = (_best_subset['amount'] < 0).sum()
+            _lb = f'{_ni} invoice(s)' + (f' + {_nc} credit note(s)' if _nc else '')
+            return [{'invoices': _best_subset.to_dict('records'), 'total': _total,
+                     'diff': _best_diff,
+                     'confidence': f'Near match — all items due by {_cs} (±€{_best_diff:,.2f})',
+                     'n': len(_best_subset), 'label': _lb + f' due by {_cs}'}], sap
 
     # Use ALL open items — invoices (positive) AND credit notes (negative)
     # A payment might be: several invoices minus some credit notes = payment amount
