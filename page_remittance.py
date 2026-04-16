@@ -306,6 +306,14 @@ def _show_amount_match():
                 f"Payment amount: **€{pmt_amt:,.2f}**  ·  "
                 f"Difference: **€{match['diff']:,.2f}**"
             )
+            if match.get('excluded_credits'):
+                excl = match['excluded_credits']
+                st.info(
+                    f"ℹ️ {len(excl)} credit note(s) totalling "
+                    f"**€{abs(sum(excl)):,.2f}** were excluded — these were likely "
+                    f"added to the account after the customer submitted their payment. "
+                    f"Credits excluded: {', '.join(f'€{abs(a):,.2f}' for a in excl)}"
+                )
 
     # Download Excel with all options
     st.markdown("---")
