@@ -231,6 +231,25 @@ EMAIL_TEMPLATES = {
 }
 
 
+
+def detect_customer_name(df) -> str:
+    """Try to extract a customer name from a SAP export dataframe."""
+    # Look for a Name column
+    for col in df.columns:
+        if col.lower() in ('name', 'customer name', 'name 1', 'name1', 'kunden name'):
+            val = df[col].dropna().iloc[0] if len(df[col].dropna()) else ""
+            if val and str(val).strip():
+                return str(val).strip()
+    # Look for header text column
+    for col in df.columns:
+        if 'header' in col.lower() or 'text' in col.lower():
+            vals = df[col].dropna().unique()
+            for v in vals:
+                v = str(v).strip()
+                if v and len(v) > 3 and not v.replace('.','').replace('-','').isdigit():
+                    return v
+    return ""
+
 EMAIL_TEMPLATES["overview"] = {
     "en": {
         "subject": "{customer_name} (00{account_id})",

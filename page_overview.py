@@ -5,7 +5,7 @@ import datetime
 import traceback
 
 from overview_engine import prepare_df, build_overview
-from common import get_email, mailto_link, LANG_LABELS
+from common import get_email, mailto_link, LANG_LABELS, detect_customer_name
 
 
 def show():
@@ -111,9 +111,11 @@ def show():
             key="ov_lang_w",
         )
     with r1b:
+        _auto_cname = detect_customer_name(df_raw) if "df_raw" in dir() else ""
         customer_name = st.text_input(
             "Customer name", key="ov_cname_w",
             placeholder="e.g. ACME Corp",
+            value=st.session_state.get("ov_cname_detected", _auto_cname),
         )
     with r1c:
         if len(accounts) > 1:
@@ -285,11 +287,17 @@ def show():
             key="ov_email_lang",
         )
     with e2:
-        sender  = st.text_input("Your name",  key="ov_sender",  placeholder="Your Name")
+        sender  = st.text_input("Your name",  key="ov_sender",  placeholder="Your Name",
+                               value=st.session_state.get("_persist_sender",""))
     with e3:
-        company = st.text_input("Company",    key="ov_company", placeholder="Your Company")
+        company = st.text_input("Company",    key="ov_company", placeholder="Your Company",
+                               value=st.session_state.get("_persist_company",""))
     with e4:
         to_email = st.text_input("Customer email", key="ov_to_email", placeholder="customer@example.com")
+
+    # Persist sender/company across pages
+    if sender: st.session_state["_persist_sender"]  = sender
+    if company: st.session_state["_persist_company"] = company
 
     subject, body = get_email(
         "overview", email_lang,

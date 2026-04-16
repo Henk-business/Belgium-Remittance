@@ -6,6 +6,7 @@ import traceback
 
 from reconcile_engine import (run_reconciliation, build_recon_report, build_statement,
                                find_amount_combinations, build_amount_match_report)
+from common import detect_customer_name
 from common import get_email, LANG_LABELS, mailto_link
 
 
@@ -220,7 +221,8 @@ def _show_amount_match():
     st.markdown("### 2 · Payment details")
     a1, a2, a3 = st.columns(3)
     with a1:
-        cname = st.text_input("Customer name", key="amt_cname_w", placeholder="e.g. Acme Corp")
+        cname = st.text_input("Customer name", key="amt_cname_w", placeholder="e.g. Acme Corp",
+                              value=st.session_state.get("_persist_sender_name",""))
     with a2:
         pmt_amt = st.number_input(
             "Payment amount (€)", min_value=0.01, value=1000.0,
@@ -333,7 +335,7 @@ def _show_amount_match():
         st.download_button(
             "⬇  Download match report",
             data=st.session_state["amt_report"].getvalue(),
-            file_name=f"AmountMatch_{safe}_{pmt_amt:.0f}.xlsx",
+            file_name=f"AmountMatch_{safe}_{pmt_amt:.0f}_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="amt_dl",
         )

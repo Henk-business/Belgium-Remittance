@@ -352,6 +352,7 @@ def build_poc_sheet(acc_df: pd.DataFrame, account_id: str,
     cell_gt_value.font  = _font(bold=True, color=gt_fg, size=15)
 
     out = BytesIO()
+    ws.freeze_panes = "A9"
     wb.save(out)
     out.seek(0)
     return out.read()

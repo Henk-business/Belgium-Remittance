@@ -201,4 +201,13 @@ payments received) = green. This is the Belgian AR convention.
 
 Common causes: wrong reference date · SAP export pre-filtered · template on wrong account
 number · account group primary account has no template uploaded.
+
+**Quality-of-life features**
+
+- **Version** shown in sidebar (e.g. v82).
+- **GitHub status** — 🟢 connected or 🔴 offline indicator in sidebar.
+- **Sender name & company persist** across pages for the session once entered in any email draft.
+- **Freeze panes** on all generated Excels so headers stay visible when scrolling.
+- **Consistent filenames** — all downloads include the date.
         """)
+# appended — QoL features added in v82+

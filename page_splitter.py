@@ -401,9 +401,15 @@ def show():
     with e1:
         lang    = st.selectbox("Language", list(LANG_LABELS.keys()), format_func=lambda x: LANG_LABELS[x], key="spl_lang")
     with e2:
-        sender  = st.text_input("Your name",  key="spl_sender",  placeholder="Your Name")
+        sender  = st.text_input("Your name",  key="spl_sender",  placeholder="Your Name",
+                               value=st.session_state.get("_persist_sender",""))
     with e3:
-        company = st.text_input("Company",    key="spl_company", placeholder="Your Company")
+        company = st.text_input("Company",    key="spl_company", placeholder="Your Company",
+                               value=st.session_state.get("_persist_company",""))
+
+    # Persist sender/company
+    if sender: st.session_state["_persist_sender"]  = sender
+    if company: st.session_state["_persist_company"] = company
 
     for acc_idx, (acc, acc_df_sel) in enumerate(account_data.items()):
         total_sel = acc_df_sel[amount_col].sum() if amount_col and amount_col in acc_df_sel.columns else 0

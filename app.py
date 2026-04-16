@@ -45,10 +45,30 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 </style>
 """, unsafe_allow_html=True)
 
-st.sidebar.markdown("""
+# Version
+APP_VERSION = "v82"
+
+# GitHub connection status
+_gh_ok = False
+try:
+    from github_storage import github_configured, _repo, _headers
+    import requests as _req
+    if github_configured():
+        _r = _req.get(f"https://api.github.com/repos/{_repo()}", headers=_headers(), timeout=5)
+        _gh_ok = _r.ok
+except Exception:
+    pass
+
+_gh_dot   = "🟢" if _gh_ok else "🔴"
+_gh_label = "GitHub connected" if _gh_ok else "GitHub offline"
+
+st.sidebar.markdown(f"""
 <div style='padding:20px 12px 20px; border-bottom:1px solid #1e293b; margin-bottom:12px;'>
-    <div style='font-size:20px; font-weight:700; color:#f1f5f9;'>💼 AR Suite</div>
+    <div style='font-size:20px; font-weight:700; color:#f1f5f9;'>💼 AR Suite
+        <span style='font-size:11px; font-weight:400; color:#64748b; margin-left:6px;'>{APP_VERSION}</span>
+    </div>
     <div style='font-size:11px; color:#475569; margin-top:4px;'>Accounts Receivable Tools</div>
+    <div style='font-size:11px; color:#475569; margin-top:6px;'>{_gh_dot} {_gh_label}</div>
 </div>
 """, unsafe_allow_html=True)
 
