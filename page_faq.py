@@ -5,184 +5,200 @@ def show():
     st.markdown("## ❓ Help & FAQ")
     st.markdown("Everything you need to know about the AR Suite tools.")
 
-    # ── TOOL 1 ────────────────────────────────────────────────────────────────
     with st.expander("🔍  Remittance Reconciliation — what does it do?", expanded=False):
         st.markdown("""
 **What it does**
 
-When a customer sends a payment with a remittance advice (a list of which invoices they're paying),
-this tool matches their list against your SAP open items and flags any discrepancies.
+Two tools in one page for handling customer payments.
 
-**When to use it**
+---
 
-Use it when a customer sends you a payment file or remittance email and you want to quickly check
-which invoices are covered, which are missing, and what the outstanding balance is after the payment.
+**Tab 1 — Remittance matching**
 
-**How to use it**
+Matches a customer's payment advice against your SAP open items and flags discrepancies.
 
-1. Export the open items for that customer from SAP (FBL5N).
+*How to use it:*
+1. Export open items from SAP (FBL5N) for that customer.
 2. Upload the SAP export and the customer's remittance file.
-3. The tool matches by document number / assignment and produces a reconciliation report.
+3. Enter customer name, payment amount, and payment date.
+4. Click **Run Reconciliation**.
 
-**Output**
+*Output:* Colour-coded Excel (matched / unmatched / partial), plus a draft email in EN/NL/FR.
 
-- A colour-coded Excel showing matched, unmatched, and partially-matched items.
-- A draft email you can send to the customer summarising the reconciliation.
+---
+
+**Tab 2 — Amount-only matching**
+
+Customer paid without sending a remittance? Enter the payment amount and the system finds
+which combinations of open invoices add up to it.
+
+*How to use it:*
+1. Export open items from SAP (FBL5N).
+2. Upload the export and enter the payment amount.
+3. Set a tolerance (default €0.05).
+4. Click **Find matching invoices**.
+
+*How matching works:* Tries exact single invoice → two-invoice pairs → greedy subset-sum
+across all open invoices. Returns up to 5 options ranked by closeness, with 🟢 exact or
+🟡 within-tolerance confidence. Downloadable as Excel with one sheet per option.
         """)
 
-    # ── TOOL 2 ────────────────────────────────────────────────────────────────
     with st.expander("📂  Account Splitter — what does it do?", expanded=False):
         st.markdown("""
 **What it does**
 
-Takes a SAP FBL5N export containing multiple customer accounts and splits it into
-one sheet per customer in a single workbook. Removes internal SAP columns, optionally
-removes invoices not yet due, and applies custom layouts where configured.
-
-**When to use it**
-
-Use it when you need to send individual account statements to multiple customers at once.
-Export all accounts in one go from SAP, upload once, and download a clean file per customer.
+Splits a SAP FBL5N export into one sheet per customer, removes SAP-internal columns,
+optionally removes invoices not yet due, and applies custom layouts where configured.
 
 **How to use it**
 
-1. Export open items from SAP (FBL5N) — can include multiple accounts.
-2. Set the reference date (invoices due after this date are removed if the option is ticked).
-3. Click **Split**. Download either the combined file or individual account files.
+1. Export open items from SAP (can include multiple accounts).
+2. Upload, set reference date, tick/untick "Remove invoices not yet due".
+3. Click **Split**.
+4. Use **Download all accounts** for a quick combined file, or use individual buttons below
+   for custom layouts.
+
+**Document language selector**
+
+Translates the Document Type column — RV → Invoice/Facture/Factuur, RV− → Credit note,
+ZP → Payment, RS− → Bonus, AB → Clearing, etc. Set independently of the email language.
+
+**Colour convention:** Positive (invoices) = red. Negative (credits/payments) = green.
+
+---
 
 **Custom templates**
 
-You can upload a customer's own Excel layout as a template. When that account appears in a
-split, the output will match their preferred format automatically.
+Upload a customer's Excel as a template — the system reads column order, widths, and header
+style and reproduces it automatically.
+*Setup:* Customer templates → Upload a new customer template.
 
 **Account groups**
 
-Two accounts that belong to the same customer (e.g. a North and South entity) can be grouped
-so they download as one combined file. Two modes are available:
-- **Separate sheets** — one sheet per account + a summary (like North & South Beverages).
-- **Flat merge** — all rows combined into one single sheet.
+Combine two or more accounts into one download.
+- **Multi-sheet:** one sheet per account (needs template on primary account).
+- **Flat merge:** all rows in one sheet, sorted by net due date. No template needed.
+*Setup:* Customer templates → Account groups → enter label + account numbers → Save.
 
 **Special layouts**
 
-- **POC grouped** (e.g. NEGOBOISSONS): rows grouped by Reference Key 3 (29xxxxx) with subtotals.
-- **Chunked** (e.g. 30111788): invoices split into €40k batches for payment processing.
-
-**Colour convention**
-
-Positive amounts (invoices) = **red**. Negative amounts (credits/payments) = **green**.
+- **POC grouped** (NEGOBOISSONS): rows grouped by 29xxxxx Reference Key 3 with subtotals.
+  Triggered automatically when template has POC structure.
+- **Chunked** (30111788): invoices split into €40k batches.
+  *Setup:* Customer templates → Chunking rules.
         """)
 
-    # ── TOOL 3 ────────────────────────────────────────────────────────────────
     with st.expander("📊  Customer Overview — what does it do?", expanded=False):
         st.markdown("""
 **What it does**
 
-Generates a formatted overview of a customer's account history. Two modes:
+Generates a formatted account overview in two modes:
 
-- **Current overview** — all open items as of a chosen reference date, with invoices not yet
-  due removed. Ideal for sending a regular monthly statement.
-- **Multi-year overview** — transactions grouped by year, showing what happened in each
-  calendar year. Useful when a customer requests a history spanning several years.
+- **📋 Current overview** — open items as of a reference date, not-yet-due invoices removed.
+- **📅 Multi-year overview** — transactions grouped by year for multi-year history.
 
-**When to use it**
+**Settings per mode**
 
-- A customer asks "what do we currently owe you?" → use **Current overview**.
-- A customer asks "can you send us everything from 2020 to today?" → use **Multi-year overview**.
+| Control | Current | Multi-year |
+|---|---|---|
+| Reference date | ✅ Active | 🔘 Greyed |
+| Remove not yet due | ✅ Active | 🔘 Greyed |
+| From / To year | 🔘 Greyed | ✅ Active |
 
 **How to use it**
 
-1. Export the full transaction history from SAP (FBL5N) for the customer — include all
-   years you need.
-2. Upload the file, select the mode, set dates if needed, choose language.
+1. Export full transaction history from SAP (FBL5N) including all required years.
+2. Upload, select mode, set dates/years, choose language.
 3. Click **Generate Overview** and download the Excel.
 
 **Grouping logic**
 
-Transactions are grouped by SAP Clearing Document. Each group (invoice + credit notes +
-payment) appears together and nets to zero when fully cleared. The year a group belongs to
-is determined by the oldest net due date of the invoice rows in that group — AB/clearing
-rows are ignored so one old clearing entry doesn't drag a group of current invoices into a
-past year.
+Transactions grouped by SAP Clearing Document. Year assigned by the oldest net due date
+of invoice rows — AB/ZP/DZ clearing rows are ignored so old clearings don't drag current
+invoices into past years.
 
-**G/L split**
+**Columns included**
 
-If a customer has both Beer (2400000) and Rent (2530009) transactions, they appear in
-separate sub-sections within each year with their own subtotals.
+Account, Assignment, Document Number, Reference Key 3, Document Date, Net due date,
+Description, Amount, Payment Method, G/L Account, Arrears. Clearing date and Clearing
+Document are excluded from all outputs.
 
-**Languages**
+**G/L split:** Beer (2400000) and Rent (2530009) shown in separate sub-sections per year.
 
-The Excel output and the email draft can each be set independently to English, Dutch, or French.
+**Document descriptions:** RV+ = Invoice, RV− = Credit note, ZP/DZ = Payment,
+RS− = Bonus, RS+ = Re-invoice, AB = Clearing / Ajustement comptable (FR),
+RV− = Note de crédit (FR).
 
-**Document type descriptions**
+**Colour:** Positive = red, Negative = green. Total rows = white on dark blue.
 
-The Document Type column is replaced with a human-readable description:
-RV+ = Invoice, RV− = Credit note, ZP/DZ = Payment, RS− = Bonus,
-RS+ = Re-invoice, AB = Clearing, Payment Method X = Payout to customer.
+**Email draft**
+
+Appears below the download button. Set name, company, customer email, language.
+Click "Open in email client" to open a pre-filled draft — attach the Excel manually.
         """)
 
-    # ── TEMPLATES ─────────────────────────────────────────────────────────────
-    with st.expander("🗂  Customer templates — how do they work?", expanded=False):
+    with st.expander("🗂  Customer templates & groups — how do they work?", expanded=False):
         st.markdown("""
-**What they are**
+**Templates**
 
-Templates let you save a customer's preferred Excel layout so the splitter
-reproduces it automatically every time that account appears in a split.
+Upload a customer's preferred Excel to reproduce their layout automatically on every split.
+The system auto-detects column order, widths, header style, and POC structure.
 
-**How to upload**
+*Upload:* Customer templates → Upload a new customer template → enter account number → upload.
 
-In the Account Splitter → **Customer templates** section → expand **Upload a new customer template**,
-enter the account number, and upload the customer's Excel file.
+*POC detection:* Template with 29xxxxx in column A → automatically POC-grouped layout.
 
-**What gets detected automatically**
+*Plain table detection:* SAP-style column headers detected regardless of merged title rows above.
+Title rows (account number, date, line count) are updated automatically with fresh values.
 
-- Column order and which columns to show
-- Row heights and column widths
-- Header style (plain table vs branded layout with merged title rows)
-- POC grouping structure (NEGOBOISSONS-style)
+---
 
 **Chunking rules**
 
-For accounts that need invoices split into payment batches (e.g. every €40,000),
-use the **Chunking rules** section to set the batch size. The rule is stored permanently
-in GitHub and applied automatically.
+Split invoices into payment batches: Customer templates → Chunking rules → enter account +
+batch size → Save. Stored in GitHub, applied automatically on every split.
+
+---
 
 **Account groups**
 
-Use the **Account groups** section to combine two or more accounts into one download.
-Set the label, enter the account numbers comma-separated, and choose flat or multi-sheet.
+*Setup:* Customer templates → Account groups → label + account numbers (comma-separated)
+→ tick Flat merge if needed → Save group.
+
+- **Multi-sheet:** separate sheet per account. Template required for primary account.
+- **Flat merge:** all rows combined in one sheet. No template needed. For accounts like
+  30351345 + 30104410 that should appear as one combined list.
         """)
 
-    # ── GENERAL ───────────────────────────────────────────────────────────────
     with st.expander("⚙️  General questions", expanded=False):
         st.markdown("""
 **Are my files stored anywhere?**
 
-Uploaded SAP files are processed in memory and never written to disk or stored.
-Templates and rules are saved to your private GitHub repository (configured in Streamlit secrets).
+Uploaded SAP files are processed in memory only and never stored. Templates, rules, and
+account groups are saved to your private GitHub repository.
+
+**Why does the app sometimes show a connection error?**
+
+Occasional GitHub API timeouts. Handled gracefully — the page still works, just without
+cached templates at that moment. Refreshing usually resolves it.
 
 **Why does the app ask me to sign in?**
 
-The app is hosted on Streamlit Cloud. If you see a login prompt, check that the app is set to
-Public in the Streamlit Cloud dashboard (Share → Public). You can share the URL directly with
-colleagues — no account needed to view a public app.
-
-**Can I automate the SAP export?**
-
-Not directly from this app — SAP requires a manual FBL5N export. However, SAP can be configured
-to email scheduled exports automatically, which could then be forwarded and uploaded here.
+Set the app to Public in Streamlit Cloud dashboard → Share → Public. Anyone with the URL
+can then open it without an account.
 
 **What SAP export format do I need?**
 
-Standard FBL5N open items export as .xlsx. Include all columns — the app strips the ones
-it doesn't need automatically. For the Customer Overview, export the full history (not just
-open items) to get all years.
+Standard FBL5N .xlsx export. Include all columns — the app strips internal ones
+automatically. For Customer Overview, export full transaction history (not just open items).
 
-**Something looks wrong in the output**
+**Red = invoices, Green = credits — is that right?**
 
-Common causes:
-- Wrong reference date selected (invoices that should be removed are still showing).
-- The SAP export was filtered before uploading (e.g. only one document type exported).
-- A template uploaded for the wrong account number.
+Yes. Positive amounts (invoices, money owed to you) = red. Negative amounts (credit notes,
+payments received) = green. This is the Belgian AR convention.
 
-If the issue persists, use the thumbs down button on any response to send feedback.
+**Something looks wrong**
+
+Common causes: wrong reference date · SAP export pre-filtered · template on wrong account
+number · account group primary account has no template uploaded.
         """)
