@@ -185,6 +185,7 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
     today_str = pd.Timestamp(today).strftime("%d/%m/%Y")
 
     wb = openpyxl.Workbook()
+    _default_sheet = wb.active  # track default sheet to remove after adding real sheets
 
     for idx, (acc, acc_df) in enumerate(account_data.items()):
         tab_name = _safe_tab(str(acc), idx)
@@ -323,6 +324,10 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
 
         auto_widths(ws, acc_df, start_col=1)
         ws.freeze_panes = "A5"
+
+    # Remove the default empty sheet openpyxl creates automatically
+    if _default_sheet in wb.worksheets and len(wb.worksheets) > 1:
+        wb.remove(_default_sheet)
 
     out = BytesIO()
     wb.save(out)
