@@ -767,9 +767,10 @@ def build_amount_match_report(matches, payment_amount: float,
         ws.title = label[:31]
 
         # Column widths
-        cols = ["Account","Document Number","Assignment","Document Date",
-                "Net due date","Document Type","Amount","Reference"]
-        widths = [12,18,14,13,13,15,18,20]
+        cols   = ["Account","Assignment","Document Number","Reference Key 3",
+                  "Document Date","Net due date","Document Type",
+                  "Amount in local currency","Arrears after net due date"]
+        widths = [10,12,17,13,13,13,15,22,24]
         for ci, w in enumerate(widths, 1):
             ws.column_dimensions[get_column_letter(ci)].width = w
         ncols = len(cols)
@@ -796,14 +797,15 @@ def build_amount_match_report(matches, payment_amount: float,
 
         # Data rows
         key_map = {
-            "Account":        "account",
-            "Document Number":"doc_number_str",
-            "Assignment":     "ref",
-            "Document Date":  "doc_date",
-            "Net due date":   "net_due",
-            "Document Type":  "doc_type",
-            "Amount":         "amount",
-            "Reference":      "context",
+            "Account":                     "account",
+            "Assignment":                  "assignment",
+            "Document Number":             "doc_number_str",
+            "Reference Key 3":             "Reference Key 3",
+            "Document Date":               "doc_date",
+            "Net due date":                "due_date",
+            "Document Type":               "doc_type",
+            "Amount in local currency":    "amount",
+            "Arrears after net due date":  "Arrears after net due date",
         }
         for ri, inv_row in enumerate(match["invoices"]):
             r = 5 + ri
@@ -811,7 +813,7 @@ def build_amount_match_report(matches, payment_amount: float,
             for ci, col in enumerate(cols, 1):
                 key = key_map.get(col, col.lower())
                 val = inv_row.get(key, "")
-                is_amt = (col == "Amount")
+                is_amt = (col == "Amount in local currency")
                 is_date = col in ("Document Date","Net due date")
                 if is_amt:
                     try: val = float(val)
@@ -842,7 +844,7 @@ def build_amount_match_report(matches, payment_amount: float,
                 cell.value = "TOTAL"
                 cell.font = font(bold=True, color=WHITE, size=10)
                 cell.alignment = aln("left")
-            elif ci == 7:  # Amount col
+            elif ci == 8:  # Amount in local currency col
                 cell.value = match["total"]
                 cell.font = font(bold=True, color=WHITE, size=10)
                 cell.alignment = aln("right")
