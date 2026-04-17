@@ -230,6 +230,8 @@ def show():
                     customer_name=customer_name.strip(),
                     account_id=(account_filter if account_filter != "All accounts" else ""),
                     lang=lang,
+                    reference_date=ref_date if single_mode else None,
+                    remove_not_due=remove_not_due if single_mode else False,
                 )
                 st.session_state["ov_result"]      = result
                 st.session_state["ov_acc"]         = account_filter

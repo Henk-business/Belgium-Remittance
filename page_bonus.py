@@ -534,10 +534,30 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
             ws.row_dimensions[r].height = 13
         ws.freeze_panes = "A3"
 
-    # X Payouts OK — full account overview (all rows for X accounts, sorted by account)
+    # X Payouts OK — full account overview for clean X accounts
+    # Filter: only include accounts that have at least one negative RS
+    # OR whose total open balance (positive RV amounts) exceeds €10,000
     ws_ok = wb.create_sheet("X Payouts — OK", 0)
-    # Collect all rows for clean X accounts
-    ok_accs = {str(r.get("Account","")) for r in x_clean}
+    _all_ok_accs = {str(r.get("Account","")) for r in x_clean}
+    ok_accs = set()
+    if acc_col:
+        for _acc in _all_ok_accs:
+            _acc_rows = acc_rows.get(_acc, [])
+            _has_neg_rs = any(
+                str(r.get(doc_type_col,"") or "").strip().upper().startswith("RS") and
+                (float(r[amt_col]) if amt_col and pd.notna(r.get(amt_col)) else 0) < 0
+                for r in _acc_rows
+            )
+            _total_neg_rv = sum(
+                float(r[amt_col]) if amt_col and pd.notna(r.get(amt_col)) else 0
+                for r in _acc_rows
+                if str(r.get(doc_type_col,"") or "").strip().upper() in ("RV",)
+                and (float(r[amt_col]) if amt_col and pd.notna(r.get(amt_col)) else 0) < 0
+            )
+            if _has_neg_rs or _total_neg_rv < -10000:
+                ok_accs.add(_acc)
+    else:
+        ok_accs = _all_ok_accs
     # Get all columns from df, stripped down to what we want to show
     keep_cols = [c for c in df.columns if c not in (
         "Reason code","Clerk Abbreviation","Cleared/open items symbol",

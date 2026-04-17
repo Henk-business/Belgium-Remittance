@@ -312,23 +312,50 @@ def build_overview(df: pd.DataFrame, amt_col: str,
             if yr is not None and year_from <= yr <= year_to:
                 by_year[yr].append(grp)
 
-    # Sort groups within each year: newest net due date first
+    # Sort groups within each year
+    # Single mode: overdue first (most overdue = highest positive arrears at top),
+    #              then not-yet-due newest first
+    # Multi-year: newest net due date first (existing behaviour)
     net_due_col_sort = next((c for c in df.columns
                              if "net due" in c.lower()
                              or "vervaldatum" in c.lower()), None)
-    def grp_sort_key(grp, _nd=net_due_col_sort, _dd=doc_date_col):
+    arrears_col_sort = next((c for c in df.columns
+                             if "arrears" in c.lower()), None)
+    ref_ts_sort = pd.Timestamp(reference_date) if reference_date else pd.Timestamp.now()
+
+    def grp_sort_key(grp, _nd=net_due_col_sort, _dd=doc_date_col,
+                     _arr=arrears_col_sort, _single=(year_from==year_to)):
         SKIP = {"AB","ZP","DZ"}
-        due_inv, due_all = [], []
+        due_inv, due_all, arrears_vals = [], [], []
         for row in grp:
-            dt = str(row.get(doc_type_col,"") or "").strip().upper() if doc_type_col else ""
-            nd = row.get(_nd) if _nd else None
+            dt  = str(row.get(doc_type_col,"") or "").strip().upper() if doc_type_col else ""
+            nd  = row.get(_nd) if _nd else None
+            arr = row.get(_arr) if _arr else None
             if nd is not None and pd.notna(nd):
                 due_all.append(nd)
                 if dt not in SKIP: due_inv.append(nd)
+            if arr is not None and pd.notna(arr):
+                try: arrears_vals.append(float(arr))
+                except: pass
         dates = due_inv or due_all
-        return min(dates) if dates else pd.Timestamp.min
+        oldest_due = min(dates) if dates else pd.Timestamp.max
+        max_arrears = max(arrears_vals) if arrears_vals else 0
+
+        if _single:
+            # Overdue groups first (positive arrears = past due), sorted by most overdue
+            # Then not-yet-due groups, sorted newest first
+            is_overdue = oldest_due <= ref_ts_sort
+            if is_overdue:
+                # Sort key: (0=overdue first, -arrears so highest arrears sorts first)
+                return (0, -max_arrears, oldest_due)
+            else:
+                # Not yet due: sort newest first within not-yet-due section
+                return (1, pd.Timestamp.max - oldest_due, oldest_due)
+        else:
+            return (0, 0, oldest_due if oldest_due != pd.Timestamp.max else pd.Timestamp.min)
+
     for yr in years:
-        by_year[yr].sort(key=grp_sort_key, reverse=True)  # newest first
+        by_year[yr].sort(key=grp_sort_key, reverse=False)  # ascending by sort key
 
     # ── Workbook ──────────────────────────────────────────────────────────────
     wb = openpyxl.Workbook()
@@ -565,6 +592,72 @@ def build_overview(df: pd.DataFrame, amt_col: str,
             ws.cell(row=r, column=ci).border = _thin()
     ws.row_dimensions[r].height = 26
     ws.freeze_panes = "A4"
+
+    # ── Monthly tab (single mode only) ────────────────────────────────────────
+    if year_from == year_to and net_due_col_sort:
+        ws_m = wb.create_sheet("By Month")
+        # Collect all data rows from the main sheet, group by net due month
+        month_groups = {}  # (year, month) -> list of groups
+        for grp in by_year.get(year_from, []):
+            due_dates = []
+            for row in grp:
+                dt = str(row.get(doc_type_col,"") or "").strip().upper() if doc_type_col else ""
+                nd = row.get(net_due_col_sort)
+                if nd is not None and pd.notna(nd) and dt not in {"AB","ZP","DZ"}:
+                    due_dates.append(nd)
+            if due_dates:
+                key_date = min(due_dates)
+                key = (key_date.year, key_date.month)
+            else:
+                key = (year_from, 0)
+            if key not in month_groups:
+                month_groups[key] = []
+            month_groups[key].append(grp)
+
+        rm = 1
+        import calendar
+        ncols_m = ncols
+        # Title
+        _mw(ws_m, rm, 1, ncols_m,
+            f"{customer_name or account_id}  ·  By Month  ·  {today_str}",
+            bold=True, bg=DK_BLUE, fg=WHITE, size=13)
+        ws_m.row_dimensions[rm].height = 30; rm += 1
+        _mw(ws_m, rm, 1, ncols_m, _t(lang, "subtitle") + f"  ·  {today_str}",
+            bg=MD_BLUE, fg=WHITE, size=9)
+        ws_m.row_dimensions[rm].height = 16; rm += 2
+
+        # Copy column widths
+        for ci in range(1, ncols_m + 1):
+            col_ltr = get_column_letter(ci)
+            ws_m.column_dimensions[col_ltr].width = ws.column_dimensions[col_ltr].width
+
+        month_total = 0.0
+        for (yr_k, mo_k), mo_grps in sorted(month_groups.items()):
+            mo_name = calendar.month_name[mo_k] if mo_k > 0 else "Unknown"
+            mo_net  = sum(float(row.get(amt_col,0) or 0)
+                          for g in mo_grps for row in g if amt_col)
+            month_total += mo_net
+
+            # Month banner
+            _mw(ws_m, rm, 1, ncols_m,
+                f"  {mo_name} {yr_k}  ·  {len(mo_grps)} group(s)  ·  €{mo_net:,.2f}",
+                bold=True, bg=DK_BLUE, fg=WHITE, size=11)
+            ws_m.row_dimensions[rm].height = 20; rm += 1
+
+            col_headers(MD_BLUE)  # reuse helper from main sheet scope
+
+            for grp in mo_grps:
+                grp_total_m = sum(float(row.get(amt_col,0) or 0) for row in grp if amt_col)
+                for ri2, row_data in enumerate(grp):
+                    data_row(row_data, GREY if ri2 % 2 == 0 else WHITE)
+                subtotal_row(_t(lang, "group_subtotal"), grp_total_m, MD_BLUE)
+                ws_m.row_dimensions[rm].height = 5; rm += 1
+
+            ws_m.row_dimensions[rm].height = 6; rm += 1
+
+        # Month grand total
+        subtotal_row(_t(lang, "net_balance"), month_total, DK_BLUE, size=11)
+        ws_m.freeze_panes = "A4"
 
     out = BytesIO()
     wb.save(out); out.seek(0)
