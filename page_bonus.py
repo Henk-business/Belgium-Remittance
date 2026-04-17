@@ -404,12 +404,24 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
             open_items.append({**base,
                 "Issue": f"Open invoice due on or before {cutoff_date.strftime('%d/%m/%Y')}"})
 
-    # ── X-account blockers ────────────────────────────────────────────────────
-    # For every account that has an X row, check if there are open RV invoices,
-    # positive RS (re-invoices/debit corrections) or RU rows on the same account
-    # — these would likely prevent a clean payout
+    # ── X-account blockers & RS-negative-ready review ───────────────────────
+    # Blockers: positive RS or positive RU on X accounts (future potential debits)
+    # NOT open invoices past cutoff — those are handled separately
+    # Also flag: accounts with negative RS (bonus credit) and NO overdue invoices
+    #            → these should be ready for payout but may not have X yet
     x_accounts = {str(r.get("Account","")) for r in x_clean + x_blocked}
     x_account_blockers = []
+    rs_ready_review = []
+
+    # Build per-account data for analysis
+    acc_rows = {}   # acc -> list of rows
+    if acc_col:
+        for _, row in df.iterrows():
+            acc = str(row[acc_col]).strip().split(".")[0].lstrip("0").zfill(8)
+            if acc not in acc_rows:
+                acc_rows[acc] = []
+            acc_rows[acc].append(row)
+
     if acc_col and doc_type_col:
         for _, row in df.iterrows():
             acc  = str(row[acc_col]).strip().split(".")[0].lstrip("0").zfill(8) if acc_col else ""
@@ -420,14 +432,14 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
             amt2 = float(row[amt_col]) if amt_col and pd.notna(row.get(amt_col)) else 0
             due2 = row[due_col] if due_col and pd.notna(row.get(due_col)) else None
             name = str(row[name_col]).strip() if name_col and pd.notna(row.get(name_col)) else ""
+            arrears_col = next((c for c in df.columns if "arrears" in c.lower()), None)
+            arrears = row.get(arrears_col,"") if arrears_col else ""
 
             if pm2 == "X":
                 continue  # skip the X row itself
 
             blocker = None
-            if dt == "RV" and amt2 > 0:
-                blocker = f"Open invoice (RV) €{amt2:,.2f}"
-            elif dt.startswith("RS") and amt2 > 0:
+            if dt.startswith("RS") and amt2 > 0:
                 blocker = f"Positive RS (re-invoice/debit) €{amt2:,.2f}"
             elif dt.startswith("RU") and amt2 > 0:
                 blocker = f"Positive RU €{amt2:,.2f}"
@@ -437,15 +449,46 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
                 x_account_blockers.append({
                     "Account": acc, "Name": name,
                     "Document Type": dt, "Amount": amt2, "Due": due_str,
-                    "Issue": f"X account has blocker: {blocker}"
+                    "Arrears": arrears,
+                    "Issue": f"Blocker: {blocker}"
+                })
+
+    # RS-negative-ready: accounts NOT in x_accounts that have a negative RS
+    # and NO open invoices due on or before cutoff
+    if acc_col and doc_type_col:
+        for acc, rows in acc_rows.items():
+            if acc in x_accounts:
+                continue  # already has X, skip
+            has_neg_rs = False
+            has_overdue = False
+            neg_rs_amt = 0
+            name = ""
+            for row in rows:
+                dt   = str(row.get(doc_type_col,"") or "").strip().upper()
+                amt2 = float(row[amt_col]) if amt_col and pd.notna(row.get(amt_col)) else 0
+                due2 = row[due_col] if due_col and pd.notna(row.get(due_col)) else None
+                pm2  = str(row.get(pay_meth_col,"") or "").strip().upper() if pay_meth_col else ""
+                if name_col and pd.notna(row.get(name_col)):
+                    name = str(row[name_col]).strip()
+                if dt.startswith("RS") and amt2 < 0:
+                    has_neg_rs = True
+                    neg_rs_amt += amt2
+                if (dt in ("RV",) and amt2 > 0 and pm2 != "X"
+                        and due2 is not None and due2 <= cutoff_ts):
+                    has_overdue = True
+            if has_neg_rs and not has_overdue:
+                rs_ready_review.append({
+                    "Account": acc, "Name": name,
+                    "RS Bonus Amount": neg_rs_amt,
+                    "Issue": f"Negative RS bonus €{neg_rs_amt:,.2f} with no overdue invoices — consider setting to X for payout"
                 })
 
     summary = {
         "X payouts — clean (no block)":       len(x_clean),
         "X payouts — BLOCKED (B or U)":       len(x_blocked),
         "B-blocked items":                     len(b_blocked),
-        "Open items on/before cutoff":         len(open_items),
         "X accounts with open blockers":       len({r["Account"] for r in x_account_blockers}),
+        "RS-bonus ready for payout review":    len(rs_ready_review),
     }
 
     # ── Build Excel ───────────────────────────────────────────────────────────
@@ -491,21 +534,71 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
             ws.row_dimensions[r].height = 13
         ws.freeze_panes = "A3"
 
-    _write_sheet("X Payouts — OK", x_clean,
-        ["Account","Name","Amount","Due","Payment Block","Status","Payout Y/N","Issue"],
-        lambda i: GREEN_HL)
+    # X Payouts OK — full account overview (all rows for X accounts, sorted by account)
+    ws_ok = wb.create_sheet("X Payouts — OK", 0)
+    # Collect all rows for clean X accounts
+    ok_accs = {str(r.get("Account","")) for r in x_clean}
+    # Get all columns from df, stripped down to what we want to show
+    keep_cols = [c for c in df.columns if c not in (
+        "Reason code","Clerk Abbreviation","Cleared/open items symbol",
+        "Case ID","Status_sap","Dunning Block","Disputed item","Payment Block" if False else "",
+        "Net due date symbol","Text","Clearing date","Clearing Document",
+        "Dunning Level","Last Dunned","Reversed with","Document Header Text",
+        "User Name","Special G/L ind.","Billing Document","Reference Key 1",
+    )]
+    # Always include Payment Block and Arrears
+    arrears_col2 = next((c for c in df.columns if "arrears" in c.lower()), None)
+    if arrears_col2 and arrears_col2 not in keep_cols:
+        keep_cols.append(arrears_col2)
+    ncols_ok = len(keep_cols)
+    _mw(ws_ok, 1, 1, ncols_ok,
+        f"X Payouts — OK (clean accounts)  —  {today_str}  ·  {len(ok_accs)} accounts",
+        bold=True, bg=DK_BLUE, fg=WHITE, sz=12)
+    ws_ok.row_dimensions[1].height = 28
+    for ci, h in enumerate(keep_cols, 1):
+        cell = ws_ok.cell(2, ci, value=h)
+        cell.font = _font(bold=True, color=WHITE, size=9)
+        cell.fill = _fill(MD_BLUE); cell.alignment = _align("center"); cell.border = _thin()
+        ws_ok.column_dimensions[get_column_letter(ci)].width = max(len(h)+2, 12)
+    ws_ok.row_dimensions[2].height = 15
+    ok_rows_df = df[df[acc_col].apply(lambda v: str(v).strip().split(".")[0].lstrip("0").zfill(8) if acc_col else "").isin(ok_accs)].copy() if acc_col else df.iloc[0:0]
+    if acc_col:
+        ok_rows_df = ok_rows_df.sort_values(acc_col)
+    for ri, (_, row) in enumerate(ok_rows_df.iterrows()):
+        r = 3 + ri
+        # Colour: X rows green, others white/grey
+        pm_v = str(row.get(pay_meth_col,"") or "").strip().upper() if pay_meth_col else ""
+        row_fill = GREEN_HL if pm_v == "X" else (GREY if ri % 2 == 0 else WHITE)
+        for ci, col in enumerate(keep_cols, 1):
+            val = row.get(col, "")
+            if isinstance(val, pd.Timestamp): val = val.strftime("%d/%m/%Y")
+            elif not isinstance(val, str) and pd.isna(val): val = ""
+            elif isinstance(val, float) and val == int(val): val = int(val)
+            is_amt = amt_col and col == amt_col
+            cell = ws_ok.cell(r, ci, value=val)
+            cell.font = _font(size=9,
+                color="FFC00000" if is_amt and isinstance(val,(int,float)) and val > 0
+                else "FF375623" if is_amt and isinstance(val,(int,float)) and val < 0
+                else BLACK)
+            cell.fill = _fill(row_fill)
+            cell.alignment = _align("right" if is_amt else "left")
+            cell.border = _thin()
+            if is_amt and isinstance(val,(int,float)):
+                cell.number_format = "#,##0.00"
+        ws_ok.row_dimensions[r].height = 13
+    ws_ok.freeze_panes = "A3"
     _write_sheet("X Payouts — BLOCKED", x_blocked,
         ["Account","Name","Amount","Due","Payment Block","Status","Payout Y/N","Issue"],
         lambda i: RED_HL)
     _write_sheet("B-Blocked Items", b_blocked,
         ["Account","Name","Amount","Due","Payment Method","Status","Issue"],
         lambda i: ORANGE_HL)
-    _write_sheet("Open Items by Cutoff", open_items,
-        ["Account","Name","Amount","Due","Status","Payout Y/N","Issue"],
-        lambda i: YELLOW_HL if i % 2 == 0 else WHITE)
     _write_sheet("X Account Blockers", x_account_blockers,
-        ["Account","Name","Document Type","Amount","Due","Issue"],
+        ["Account","Name","Document Type","Amount","Due","Arrears","Issue"],
         lambda i: RED_HL)
+    _write_sheet("RS Ready for Review", rs_ready_review,
+        ["Account","Name","RS Bonus Amount","Issue"],
+        lambda i: YELLOW_HL)
 
     # Summary sheet
     ws_s = wb.create_sheet("Summary", 0)
@@ -585,26 +678,22 @@ def _show_payout_checker():
     m3.metric("🔴 B-blocked items",   summary.get("B-blocked items", 0),
               delta="needs action" if summary.get("B-blocked items",0) > 0 else None,
               delta_color="inverse")
-    m4.metric(f"📅 Open by {cutoff.strftime('%d/%m')}",
-              summary.get("Open items on/before cutoff", 0),
-              delta="needs review" if summary.get("Open items on/before cutoff",0) > 0 else None,
-              delta_color="inverse")
-
-    _, m5 = st.columns([3,1])
-    m5.metric("⛔ X acct blockers",
+    m4.metric("⛔ X acct blockers",
               summary.get("X accounts with open blockers", 0),
               delta="check before payout" if summary.get("X accounts with open blockers",0) > 0 else None,
               delta_color="inverse")
+
 
     if summary.get("X payouts — BLOCKED (B or U)", 0) > 0:
         st.error(f"🚫 {summary['X payouts — BLOCKED (B or U)']} X payout(s) have a B or U block — remove the block before the payout run.")
     if summary.get("B-blocked items", 0) > 0:
         st.warning(f"⚠ {summary['B-blocked items']} item(s) have a Payment Block B.")
-    if summary.get("Open items on/before cutoff", 0) > 0:
-        st.warning(f"📅 {summary['Open items on/before cutoff']} open item(s) due on or before {cutoff.strftime('%d/%m/%Y')}.")
     if summary.get("X accounts with open blockers", 0) > 0:
         n_acc = summary['X accounts with open blockers']
-        st.error(f"⛔ {n_acc} account(s) with an X payout have open invoices, positive RS or RU rows — these may need to be resolved before payout. See 'X Account Blockers' sheet.")
+        st.error(f"⛔ {n_acc} account(s) with an X payout have positive RS or RU rows — resolve before payout. See 'X Account Blockers' sheet.")
+    if summary.get("RS-bonus ready for payout review", 0) > 0:
+        n_rs = summary['RS-bonus ready for payout review']
+        st.info(f"💡 {n_rs} account(s) have a negative RS bonus and no overdue invoices — consider setting to X for payout. See 'RS Ready for Review' sheet.")
     if all(v == 0 for k,v in summary.items() if k != "X payouts — clean (no block)"):
         st.success("✅ All clear — no blocked payouts, no B-blocks, no overdue open items.")
 
