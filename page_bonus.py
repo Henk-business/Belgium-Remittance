@@ -219,19 +219,19 @@ def _show_matching():
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("**Your SAP export** (FBL5N or customer list)")
-        sap_file = st.file_uploader("SAP", type=["xlsx","xls"],
+        sap_file = st.file_uploader("SAP", type=["xlsx","xls","xlsm"],
                                     label_visibility="collapsed", key="bon_sap")
     with c2:
         st.markdown("**Bonus / partner file**")
-        bonus_file = st.file_uploader("Bonus", type=["xlsx","xls"],
+        bonus_file = st.file_uploader("Bonus", type=["xlsx","xls","xlsm"],
                                       label_visibility="collapsed", key="bon_bonus")
 
     if not sap_file or not bonus_file:
         return
 
     try:
-        sap_df   = pd.read_excel(sap_file,   dtype=str)
-        bonus_df = pd.read_excel(bonus_file, dtype=str)
+        sap_df   = pd.read_excel(sap_file,   dtype=str, engine="openpyxl")
+        bonus_df = pd.read_excel(bonus_file, dtype=str, engine="openpyxl")
     except Exception as e:
         st.error(f"Could not read files: {e}")
         return
@@ -313,100 +313,118 @@ def _show_matching():
 # TAB 2 — PAYOUT & BLOCK CHECKER
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _is_bonus_file(df) -> bool:
+    """Detect if this is the dedicated bonus/payout file (has Bonus, Payout Y/N cols)."""
+    cols_lower = [c.lower() for c in df.columns]
+    return any("bonus" in c for c in cols_lower) and any("payout" in c for c in cols_lower)
+
+
 def _build_payout_report(df, cutoff_date, today_str) -> tuple:
     """
-    Analyse the export for:
-    1. Payment Method X rows — flag if blocked (B or U in Payment Block col)
-    2. Open invoices on or before cutoff_date — flag per account
-    3. B-blocked items — any payment block = B
-
-    Returns (excel_bytes, summary_dict)
+    Works with both:
+    - SAP FBL5N export (standard open items)
+    - Dedicated bonus/payout file (has Bonus, Payment Method, Payment Block, Payout Y/N etc.)
     """
-    # Normalise columns
-    col_map = {c.lower().strip(): c for c in df.columns}
+    is_bonus = _is_bonus_file(df)
+    col_map   = {c.lower().strip(): c for c in df.columns}
+
+    # Column detection
     pay_meth_col  = next((col_map[k] for k in col_map if "payment method" in k), None)
     pay_block_col = next((col_map[k] for k in col_map if "payment block" in k), None)
     acc_col       = next((col_map[k] for k in col_map
-                          if k in ("account","konto","debitor")), None)
-    amt_col       = next((col_map[k] for k in col_map if "amount" in k), None)
+                          if k in ("account","customer","konto","debitor")), None)
+    name_col      = next((col_map[k] for k in col_map if k == "name"), None)
+    if is_bonus:
+        amt_col = next((col_map[k] for k in col_map if "bonus" in k), None)
+    else:
+        amt_col = next((col_map[k] for k in col_map if "amount" in k), None)
+    if not amt_col:
+        amt_col = next((col_map[k] for k in col_map if "amount" in k or "balance" in k), None)
     due_col       = next((col_map[k] for k in col_map
-                          if "net due" in k or "due date" in k or "vervaldatum" in k), None)
-    doc_col       = next((col_map[k] for k in col_map
-                          if "document number" in k or "belegnummer" in k), None)
-    doc_type_col  = next((col_map[k] for k in col_map
-                          if "document type" in k or "belegtyp" in k), None)
+                          if "next payout" in k or "net due" in k or "due date" in k), None)
+    status_col    = next((col_map[k] for k in col_map if k == "status"), None)
+    payout_col    = next((col_map[k] for k in col_map if "payout y" in k), None)
+    open_col      = next((col_map[k] for k in col_map
+                          if "other open" in k or "open item" in k), None)
 
     df = df.copy()
     if due_col:
         df[due_col] = pd.to_datetime(df[due_col], errors="coerce")
     if amt_col:
         df[amt_col] = pd.to_numeric(df[amt_col], errors="coerce")
+    if open_col:
+        df[open_col] = pd.to_numeric(df[open_col], errors="coerce")
 
     cutoff_ts = pd.Timestamp(cutoff_date)
 
-    # ── Categorise rows ───────────────────────────────────────────────────────
     def _get(row, col):
-        return str(row[col]).strip().upper() if col and col in row.index else ""
+        if not col or col not in row.index: return ""
+        v = row[col]
+        return str(v).strip().upper() if pd.notna(v) else ""
 
-    issues = []
-    x_clean = []
-    x_blocked = []
-    b_blocked = []
-    open_invoices = []
+    x_clean    = []
+    x_blocked  = []
+    b_blocked  = []
+    open_items = []
 
     for _, row in df.iterrows():
-        pm    = _get(row, pay_meth_col)
-        pb    = _get(row, pay_block_col)
-        acc   = _get(row, acc_col)
-        amt   = row[amt_col] if amt_col and pd.notna(row.get(amt_col)) else None
-        due   = row[due_col] if due_col and pd.notna(row.get(due_col)) else None
-        doc   = _get(row, doc_col)
-        dt    = _get(row, doc_type_col)
+        pm   = _get(row, pay_meth_col)
+        pb   = _get(row, pay_block_col)
+        acc  = _get(row, acc_col)
+        name = str(row[name_col]).strip() if name_col and pd.notna(row.get(name_col)) else ""
+        amt  = row[amt_col] if amt_col and pd.notna(row.get(amt_col)) else None
+        due  = row[due_col] if due_col and pd.notna(row.get(due_col)) else None
+        stat = _get(row, status_col)
+        pout = _get(row, payout_col)
+        oi   = row[open_col] if open_col and pd.notna(row.get(open_col)) else 0
+
+        base = {"Account": acc, "Name": name, "Amount": amt, "Due": due,
+                "Status": stat, "Payout Y/N": pout}
 
         # X payout rows
         if pm == "X":
             if pb in ("B", "U"):
-                x_blocked.append({
-                    "Account": acc, "Document": doc, "Amount": amt,
-                    "Due": due, "Payment Block": pb,
-                    "Issue": f"X payout blocked ({pb} block)"
-                })
+                x_blocked.append({**base,
+                    "Payment Block": pb,
+                    "Issue": f"X payout blocked — {pb} block must be removed before payout"})
             else:
-                x_clean.append({
-                    "Account": acc, "Document": doc, "Amount": amt,
-                    "Due": due, "Issue": "OK"
-                })
+                x_clean.append({**base,
+                    "Payment Block": pb or "—",
+                    "Issue": "OK — no block"})
 
-        # B-blocked items (any row, not just X)
+        # B-blocked (any row)
         if pb == "B":
-            b_blocked.append({
-                "Account": acc, "Document": doc, "Type": dt,
-                "Amount": amt, "Due": due,
-                "Issue": "Payment Block B"
-            })
+            b_blocked.append({**base,
+                "Payment Method": pm,
+                "Issue": "Payment Block B"})
 
-        # Open invoices on or before cutoff (positive amounts, no clearing)
-        if (due is not None and due <= cutoff_ts and
-                amt is not None and amt > 0 and
-                dt in ("RV", "") and pm != "X"):
-            open_invoices.append({
-                "Account": acc, "Document": doc, "Type": dt,
-                "Amount": amt, "Due": due,
-                "Issue": f"Open invoice due on or before {cutoff_date.strftime('%d/%m/%Y')}"
-            })
+        # Open items by cutoff
+        if is_bonus:
+            # For bonus file: flag rows with Other Open Item > 0 AND due <= cutoff
+            if oi and float(oi) != 0:
+                if due is None or due <= cutoff_ts:
+                    open_items.append({**base,
+                        "Open Amount": oi,
+                        "Issue": f"Other open item €{oi:,.2f} — due on or before {cutoff_date.strftime('%d/%m/%Y')}"})
+        else:
+            # For SAP: flag open positive invoices on or before cutoff
+            if (due is not None and due <= cutoff_ts and
+                    amt is not None and float(amt) > 0 and pm != "X"):
+                open_items.append({**base,
+                    "Issue": f"Open invoice due on or before {cutoff_date.strftime('%d/%m/%Y')}"})
 
     summary = {
-        "X payouts — clean":        len(x_clean),
-        "X payouts — BLOCKED":      len(x_blocked),
-        "B-blocked items":           len(b_blocked),
-        "Open invoices by cutoff":   len(open_invoices),
+        "X payouts — clean (no block)":  len(x_clean),
+        "X payouts — BLOCKED (B or U)":  len(x_blocked),
+        "B-blocked items":                len(b_blocked),
+        "Open items on/before cutoff":    len(open_items),
     }
 
     # ── Build Excel ───────────────────────────────────────────────────────────
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
-    def _write_sheet(title, rows, cols, fill_col=None, fill_fn=None):
+    def _write_sheet(title, rows, cols, row_fill_fn):
         ws = wb.create_sheet(title=title[:31])
         ncols = len(cols)
         _mw(ws, 1, 1, ncols,
@@ -416,102 +434,87 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
         for ci, h in enumerate(cols, 1):
             cell = ws.cell(2, ci, value=h)
             cell.font = _font(bold=True, color=WHITE, size=9)
-            cell.fill = _fill(MD_BLUE); cell.alignment = _align("center")
-            cell.border = _thin()
+            cell.fill = _fill(MD_BLUE); cell.alignment = _align("center"); cell.border = _thin()
             ws.column_dimensions[get_column_letter(ci)].width = max(len(h)+2, 14)
         ws.row_dimensions[2].height = 15
         if not rows:
-            _mw(ws, 3, 1, ncols, "No items found.", bg=GREEN_HL, sz=10)
+            _mw(ws, 3, 1, ncols, "No items found — all clear ✓", bg=GREEN_HL, sz=10)
+            ws.row_dimensions[3].height = 20
             return
-        for ri, row in enumerate(rows):
+        for ri, row_data in enumerate(rows):
             r = 3 + ri
-            row_fill = (fill_fn(row) if fill_fn else
-                        (GREY if ri % 2 == 0 else WHITE))
+            rf = row_fill_fn(ri)
             for ci, col in enumerate(cols, 1):
-                val = row.get(col, "")
-                if isinstance(val, pd.Timestamp):
-                    val = val.strftime("%d/%m/%Y")
-                elif pd.isna(val) if not isinstance(val, str) else False:
-                    val = ""
-                elif isinstance(val, float) and val == int(val):
-                    val = int(val)
+                val = row_data.get(col, "")
+                if isinstance(val, pd.Timestamp): val = val.strftime("%d/%m/%Y")
+                elif not isinstance(val, str) and pd.isna(val): val = ""
+                elif isinstance(val, float) and val == int(val): val = int(val)
+                is_amt = col in ("Amount","Open Amount","Bonus")
                 cell = ws.cell(r, ci, value=val)
                 cell.font = _font(size=9,
-                                  color="FFC00000" if col == "Amount" and isinstance(val,(int,float)) and val > 0
-                                  else "FF375623" if col == "Amount" and isinstance(val,(int,float)) and val < 0
-                                  else BLACK)
-                cell.fill = _fill(row_fill)
-                cell.alignment = _align("right" if col == "Amount" else "left")
+                    color="FFC00000" if is_amt and isinstance(val,(int,float)) and val > 0
+                    else "FF375623" if is_amt and isinstance(val,(int,float)) and val < 0
+                    else BLACK)
+                cell.fill = _fill(rf)
+                cell.alignment = _align("right" if is_amt else "left")
                 cell.border = _thin()
-                if col == "Amount" and isinstance(val, (int,float)):
+                if is_amt and isinstance(val,(int,float)):
                     cell.number_format = "#,##0.00"
             ws.row_dimensions[r].height = 13
         ws.freeze_panes = "A3"
 
-    # Sheet 1: X payouts clean
-    _write_sheet("X Payouts — OK",
-                 x_clean,
-                 ["Account","Document","Amount","Due","Issue"],
-                 fill_fn=lambda r: GREEN_HL)
+    _write_sheet("X Payouts — OK", x_clean,
+        ["Account","Name","Amount","Due","Payment Block","Status","Payout Y/N","Issue"],
+        lambda i: GREEN_HL)
+    _write_sheet("X Payouts — BLOCKED", x_blocked,
+        ["Account","Name","Amount","Due","Payment Block","Status","Payout Y/N","Issue"],
+        lambda i: RED_HL)
+    _write_sheet("B-Blocked Items", b_blocked,
+        ["Account","Name","Amount","Due","Payment Method","Status","Issue"],
+        lambda i: ORANGE_HL)
+    _write_sheet("Open Items by Cutoff", open_items,
+        ["Account","Name","Amount","Due","Status","Payout Y/N","Issue"],
+        lambda i: YELLOW_HL if i % 2 == 0 else WHITE)
 
-    # Sheet 2: X payouts blocked
-    _write_sheet("X Payouts — BLOCKED",
-                 x_blocked,
-                 ["Account","Document","Amount","Due","Payment Block","Issue"],
-                 fill_fn=lambda r: RED_HL)
-
-    # Sheet 3: B-blocked
-    _write_sheet("B-Blocked Items",
-                 b_blocked,
-                 ["Account","Document","Type","Amount","Due","Issue"],
-                 fill_fn=lambda r: ORANGE_HL)
-
-    # Sheet 4: Open invoices by cutoff
-    _write_sheet("Open Invoices by Cutoff",
-                 open_invoices,
-                 ["Account","Document","Type","Amount","Due","Issue"],
-                 fill_fn=lambda r: YELLOW_HL)
-
-    # Sheet 5: Summary
+    # Summary sheet
     ws_s = wb.create_sheet("Summary", 0)
-    _mw(ws_s, 1, 1, 2, f"Payout & Block Check  —  {today_str}",
+    _mw(ws_s, 1, 1, 2, f"Payout & Block Check  —  {today_str}  ·  Cutoff: {cutoff_date.strftime('%d/%m/%Y')}",
         bold=True, bg=DK_BLUE, fg=WHITE, sz=13)
     ws_s.row_dimensions[1].height = 30
-    ws_s.column_dimensions["A"].width = 30
+    ws_s.column_dimensions["A"].width = 35
     ws_s.column_dimensions["B"].width = 14
     for ri, (label, val) in enumerate(summary.items(), 3):
-        has_issue = val > 0 and "BLOCKED" in label or "B-blocked" in label or "Open" in label
-        row_fill  = RED_HL if has_issue and val > 0 else GREEN_HL if val == 0 else GREY
+        has_issue = val > 0 and ("BLOCKED" in label or "B-blocked" in label or "Open" in label)
+        rf = RED_HL if has_issue else (GREEN_HL if val == 0 else GREY)
         ws_s.cell(ri, 1, value=label).font = _font(size=10)
         ws_s.cell(ri, 2, value=val).font   = _font(bold=True, size=10)
-        ws_s.cell(ri, 1).fill = _fill(row_fill)
-        ws_s.cell(ri, 2).fill = _fill(row_fill)
+        ws_s.cell(ri, 1).fill = _fill(rf)
+        ws_s.cell(ri, 2).fill = _fill(rf)
         ws_s.row_dimensions[ri].height = 18
 
-    out = BytesIO()
-    wb.save(out); out.seek(0)
+    out = BytesIO(); wb.save(out); out.seek(0)
     return out.read(), summary
 
 
 def _show_payout_checker():
     st.markdown("### 💸 Payout & block checker")
     st.caption(
-        "Upload a SAP export to check: X payouts are clean (no B/U blocks), "
-        "flag any B-blocked items, and show open invoices on or before a chosen date."
+        "Upload your SAP export or bonus/payout file. "
+        "Checks X payouts for blocks, flags B-blocked items, and shows open items by cutoff date."
     )
 
     sap_file = st.file_uploader(
-        "SAP export (FBL5N)", type=["xlsx","xls"],
+        "SAP export or bonus/payout file", type=["xlsx","xls","xlsm"],
         label_visibility="collapsed", key="pbc_sap"
     )
 
     p1, p2, _ = st.columns([1, 1, 2])
     with p1:
         cutoff = st.date_input(
-            "Cutoff date for open invoices",
+            "Cutoff date for open items",
             value=datetime.date.today().replace(day=21),
             key="pbc_cutoff",
-            help="Flag any open invoices with net due date on or before this date"
+            help="Flag open items with due date on or before this date"
         )
     with p2:
         st.markdown("")
@@ -521,15 +524,18 @@ def _show_payout_checker():
 
     if run:
         if not sap_file:
-            st.error("Please upload a SAP export.")
+            st.error("Please upload a file.")
         else:
             with st.spinner("Analysing…"):
                 try:
-                    df = pd.read_excel(sap_file, dtype=str)
+                    df = pd.read_excel(sap_file, dtype=str, engine="openpyxl")
                     today_str = datetime.date.today().strftime("%d/%m/%Y")
+                    is_b = _is_bonus_file(df)
+                    st.session_state["pbc_is_bonus"] = is_b
                     result, summary = _build_payout_report(df, cutoff, today_str)
                     st.session_state["pbc_result"]  = result
                     st.session_state["pbc_summary"] = summary
+                    st.session_state["pbc_cutoff"]  = cutoff
                 except Exception as e:
                     st.error(f"Error: {e}")
                     import traceback
@@ -540,38 +546,40 @@ def _show_payout_checker():
 
     result  = st.session_state["pbc_result"]
     summary = st.session_state["pbc_summary"]
+    cutoff  = st.session_state.get("pbc_cutoff", cutoff)
+    is_b    = st.session_state.get("pbc_is_bonus", False)
+
+    if is_b:
+        st.info("📋 Bonus/payout file detected — using Bonus, Payment Method, Payment Block and Other Open Item columns.")
 
     st.markdown("---")
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("✅ X payouts clean",    summary.get("X payouts — clean", 0))
-    m2.metric("🚫 X payouts blocked",  summary.get("X payouts — BLOCKED", 0),
-              delta="needs action" if summary.get("X payouts — BLOCKED",0) > 0 else None,
+    m1.metric("✅ X payouts clean",   summary.get("X payouts — clean (no block)", 0))
+    m2.metric("🚫 X payouts blocked", summary.get("X payouts — BLOCKED (B or U)", 0),
+              delta="needs action" if summary.get("X payouts — BLOCKED (B or U)",0) > 0 else None,
               delta_color="inverse")
-    m3.metric("🔴 B-blocked items",    summary.get("B-blocked items", 0),
+    m3.metric("🔴 B-blocked items",   summary.get("B-blocked items", 0),
               delta="needs action" if summary.get("B-blocked items",0) > 0 else None,
               delta_color="inverse")
     m4.metric(f"📅 Open by {cutoff.strftime('%d/%m')}",
-              summary.get("Open invoices by cutoff", 0),
-              delta="needs review" if summary.get("Open invoices by cutoff",0) > 0 else None,
+              summary.get("Open items on/before cutoff", 0),
+              delta="needs review" if summary.get("Open items on/before cutoff",0) > 0 else None,
               delta_color="inverse")
 
-    # Alerts
-    if summary.get("X payouts — BLOCKED", 0) > 0:
-        st.error(f"🚫 {summary['X payouts — BLOCKED']} X payout(s) have a B or U block — these will NOT be paid out until the block is removed.")
+    if summary.get("X payouts — BLOCKED (B or U)", 0) > 0:
+        st.error(f"🚫 {summary['X payouts — BLOCKED (B or U)']} X payout(s) have a B or U block — remove the block before the payout run.")
     if summary.get("B-blocked items", 0) > 0:
         st.warning(f"⚠ {summary['B-blocked items']} item(s) have a Payment Block B.")
-    if summary.get("Open invoices by cutoff", 0) > 0:
-        st.warning(f"📅 {summary['Open invoices by cutoff']} open invoice(s) found due on or before {cutoff.strftime('%d/%m/%Y')}.")
-    if (summary.get("X payouts — BLOCKED",0) == 0 and
-            summary.get("B-blocked items",0) == 0 and
-            summary.get("Open invoices by cutoff",0) == 0):
-        st.success("✅ All clear — no blocked payouts, no B-blocks, no overdue open invoices.")
+    if summary.get("Open items on/before cutoff", 0) > 0:
+        st.warning(f"📅 {summary['Open items on/before cutoff']} open item(s) due on or before {cutoff.strftime('%d/%m/%Y')}.")
+    if all(v == 0 for k,v in summary.items() if k != "X payouts — clean (no block)"):
+        st.success("✅ All clear — no blocked payouts, no B-blocks, no overdue open items.")
 
-    today = datetime.date.today().strftime("%Y%m%d")
+    today_fn = datetime.date.today().strftime("%Y%m%d")
     st.download_button(
         "⬇  Download full report",
         data=result,
-        file_name=f"PayoutCheck_{today}.xlsx",
+        file_name=f"PayoutCheck_{today_fn}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True, key="pbc_dl",
     )
