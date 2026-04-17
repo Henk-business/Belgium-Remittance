@@ -344,6 +344,8 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
     payout_col    = next((col_map[k] for k in col_map if "payout y" in k), None)
     open_col      = next((col_map[k] for k in col_map
                           if "other open" in k or "open item" in k), None)
+    doc_type_col  = next((col_map[k] for k in col_map
+                          if "document type" in k or "belegtyp" in k), None)
 
     df = df.copy()
     if due_col:
@@ -396,26 +398,54 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
                 "Payment Method": pm,
                 "Issue": "Payment Block B"})
 
-        # Open items by cutoff
-        if is_bonus:
-            # For bonus file: flag rows with Other Open Item > 0 AND due <= cutoff
-            if oi and float(oi) != 0:
-                if due is None or due <= cutoff_ts:
-                    open_items.append({**base,
-                        "Open Amount": oi,
-                        "Issue": f"Other open item €{oi:,.2f} — due on or before {cutoff_date.strftime('%d/%m/%Y')}"})
-        else:
-            # For SAP: flag open positive invoices on or before cutoff
-            if (due is not None and due <= cutoff_ts and
-                    amt is not None and float(amt) > 0 and pm != "X"):
-                open_items.append({**base,
-                    "Issue": f"Open invoice due on or before {cutoff_date.strftime('%d/%m/%Y')}"})
+        # Open items by cutoff (non-X rows)
+        if (due is not None and due <= cutoff_ts and
+                amt is not None and float(amt) > 0 and pm != "X"):
+            open_items.append({**base,
+                "Issue": f"Open invoice due on or before {cutoff_date.strftime('%d/%m/%Y')}"})
+
+    # ── X-account blockers ────────────────────────────────────────────────────
+    # For every account that has an X row, check if there are open RV invoices,
+    # positive RS (re-invoices/debit corrections) or RU rows on the same account
+    # — these would likely prevent a clean payout
+    x_accounts = {str(r.get("Account","")) for r in x_clean + x_blocked}
+    x_account_blockers = []
+    if acc_col and doc_type_col:
+        for _, row in df.iterrows():
+            acc  = str(row[acc_col]).strip().split(".")[0].lstrip("0").zfill(8) if acc_col else ""
+            if acc not in x_accounts:
+                continue
+            dt   = str(row.get(doc_type_col,"") or "").strip().upper() if doc_type_col else ""
+            pm2  = str(row.get(pay_meth_col,"") or "").strip().upper() if pay_meth_col else ""
+            amt2 = float(row[amt_col]) if amt_col and pd.notna(row.get(amt_col)) else 0
+            due2 = row[due_col] if due_col and pd.notna(row.get(due_col)) else None
+            name = str(row[name_col]).strip() if name_col and pd.notna(row.get(name_col)) else ""
+
+            if pm2 == "X":
+                continue  # skip the X row itself
+
+            blocker = None
+            if dt == "RV" and amt2 > 0:
+                blocker = f"Open invoice (RV) €{amt2:,.2f}"
+            elif dt.startswith("RS") and amt2 > 0:
+                blocker = f"Positive RS (re-invoice/debit) €{amt2:,.2f}"
+            elif dt.startswith("RU") and amt2 > 0:
+                blocker = f"Positive RU €{amt2:,.2f}"
+
+            if blocker:
+                due_str = pd.Timestamp(due2).strftime("%d/%m/%Y") if due2 is not None else "—"
+                x_account_blockers.append({
+                    "Account": acc, "Name": name,
+                    "Document Type": dt, "Amount": amt2, "Due": due_str,
+                    "Issue": f"X account has blocker: {blocker}"
+                })
 
     summary = {
-        "X payouts — clean (no block)":  len(x_clean),
-        "X payouts — BLOCKED (B or U)":  len(x_blocked),
-        "B-blocked items":                len(b_blocked),
-        "Open items on/before cutoff":    len(open_items),
+        "X payouts — clean (no block)":       len(x_clean),
+        "X payouts — BLOCKED (B or U)":       len(x_blocked),
+        "B-blocked items":                     len(b_blocked),
+        "Open items on/before cutoff":         len(open_items),
+        "X accounts with open blockers":       len({r["Account"] for r in x_account_blockers}),
     }
 
     # ── Build Excel ───────────────────────────────────────────────────────────
@@ -473,6 +503,9 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
     _write_sheet("Open Items by Cutoff", open_items,
         ["Account","Name","Amount","Due","Status","Payout Y/N","Issue"],
         lambda i: YELLOW_HL if i % 2 == 0 else WHITE)
+    _write_sheet("X Account Blockers", x_account_blockers,
+        ["Account","Name","Document Type","Amount","Due","Issue"],
+        lambda i: RED_HL)
 
     # Summary sheet
     ws_s = wb.create_sheet("Summary", 0)
@@ -557,12 +590,21 @@ def _show_payout_checker():
               delta="needs review" if summary.get("Open items on/before cutoff",0) > 0 else None,
               delta_color="inverse")
 
+    _, m5 = st.columns([3,1])
+    m5.metric("⛔ X acct blockers",
+              summary.get("X accounts with open blockers", 0),
+              delta="check before payout" if summary.get("X accounts with open blockers",0) > 0 else None,
+              delta_color="inverse")
+
     if summary.get("X payouts — BLOCKED (B or U)", 0) > 0:
         st.error(f"🚫 {summary['X payouts — BLOCKED (B or U)']} X payout(s) have a B or U block — remove the block before the payout run.")
     if summary.get("B-blocked items", 0) > 0:
         st.warning(f"⚠ {summary['B-blocked items']} item(s) have a Payment Block B.")
     if summary.get("Open items on/before cutoff", 0) > 0:
         st.warning(f"📅 {summary['Open items on/before cutoff']} open item(s) due on or before {cutoff.strftime('%d/%m/%Y')}.")
+    if summary.get("X accounts with open blockers", 0) > 0:
+        n_acc = summary['X accounts with open blockers']
+        st.error(f"⛔ {n_acc} account(s) with an X payout have open invoices, positive RS or RU rows — these may need to be resolved before payout. See 'X Account Blockers' sheet.")
     if all(v == 0 for k,v in summary.items() if k != "X payouts — clean (no block)"):
         st.success("✅ All clear — no blocked payouts, no B-blocks, no overdue open items.")
 
