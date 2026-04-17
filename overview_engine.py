@@ -255,7 +255,9 @@ def build_overview(df: pd.DataFrame, amt_col: str,
                    account_id:     str  = "",
                    lang:           str  = "en",
                    reference_date       = None,
-                   remove_not_due: bool = False) -> BytesIO:
+                   remove_not_due: bool = False,
+                   month_from:     int  = 1,
+                   month_to:       int  = 12) -> BytesIO:
 
     years = list(range(year_from, year_to + 1))
 
@@ -273,6 +275,16 @@ def build_overview(df: pd.DataFrame, amt_col: str,
         if net_due_col_filt and net_due_col_filt in df.columns:
             due = pd.to_datetime(df[net_due_col_filt], errors="coerce")
             df  = df[due.isna() | (due <= ref_ts)].copy()
+
+    # Apply month range filter (single mode only — month_from/month_to set)
+    if month_from != 1 or month_to != 12:
+        net_due_col_filt2 = next((c for c in df.columns
+                                  if "net due" in c.lower()
+                                  or "vervaldatum" in c.lower()), None)
+        if net_due_col_filt2 and net_due_col_filt2 in df.columns:
+            due2 = pd.to_datetime(df[net_due_col_filt2], errors="coerce")
+            df   = df[due2.isna() |
+                      ((due2.dt.month >= month_from) & (due2.dt.month <= month_to))].copy()
 
     # Key column names
     doc_date_col = next((c for c in df.columns if "document date" in c.lower()
@@ -593,71 +605,6 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     ws.row_dimensions[r].height = 26
     ws.freeze_panes = "A4"
 
-    # ── Monthly tab (single mode only) ────────────────────────────────────────
-    if year_from == year_to and net_due_col_sort:
-        ws_m = wb.create_sheet("By Month")
-        # Collect all data rows from the main sheet, group by net due month
-        month_groups = {}  # (year, month) -> list of groups
-        for grp in by_year.get(year_from, []):
-            due_dates = []
-            for row in grp:
-                dt = str(row.get(doc_type_col,"") or "").strip().upper() if doc_type_col else ""
-                nd = row.get(net_due_col_sort)
-                if nd is not None and pd.notna(nd) and dt not in {"AB","ZP","DZ"}:
-                    due_dates.append(nd)
-            if due_dates:
-                key_date = min(due_dates)
-                key = (key_date.year, key_date.month)
-            else:
-                key = (year_from, 0)
-            if key not in month_groups:
-                month_groups[key] = []
-            month_groups[key].append(grp)
-
-        rm = 1
-        import calendar
-        ncols_m = ncols
-        # Title
-        _mw(ws_m, rm, 1, ncols_m,
-            f"{customer_name or account_id}  ·  By Month  ·  {today_str}",
-            bold=True, bg=DK_BLUE, fg=WHITE, size=13)
-        ws_m.row_dimensions[rm].height = 30; rm += 1
-        _mw(ws_m, rm, 1, ncols_m, _t(lang, "subtitle") + f"  ·  {today_str}",
-            bg=MD_BLUE, fg=WHITE, size=9)
-        ws_m.row_dimensions[rm].height = 16; rm += 2
-
-        # Copy column widths
-        for ci in range(1, ncols_m + 1):
-            col_ltr = get_column_letter(ci)
-            ws_m.column_dimensions[col_ltr].width = ws.column_dimensions[col_ltr].width
-
-        month_total = 0.0
-        for (yr_k, mo_k), mo_grps in sorted(month_groups.items()):
-            mo_name = calendar.month_name[mo_k] if mo_k > 0 else "Unknown"
-            mo_net  = sum(float(row.get(amt_col,0) or 0)
-                          for g in mo_grps for row in g if amt_col)
-            month_total += mo_net
-
-            # Month banner
-            _mw(ws_m, rm, 1, ncols_m,
-                f"  {mo_name} {yr_k}  ·  {len(mo_grps)} group(s)  ·  €{mo_net:,.2f}",
-                bold=True, bg=DK_BLUE, fg=WHITE, size=11)
-            ws_m.row_dimensions[rm].height = 20; rm += 1
-
-            col_headers(MD_BLUE)  # reuse helper from main sheet scope
-
-            for grp in mo_grps:
-                grp_total_m = sum(float(row.get(amt_col,0) or 0) for row in grp if amt_col)
-                for ri2, row_data in enumerate(grp):
-                    data_row(row_data, GREY if ri2 % 2 == 0 else WHITE)
-                subtotal_row(_t(lang, "group_subtotal"), grp_total_m, MD_BLUE)
-                ws_m.row_dimensions[rm].height = 5; rm += 1
-
-            ws_m.row_dimensions[rm].height = 6; rm += 1
-
-        # Month grand total
-        subtotal_row(_t(lang, "net_balance"), month_total, DK_BLUE, size=11)
-        ws_m.freeze_panes = "A4"
 
     out = BytesIO()
     wb.save(out); out.seek(0)

@@ -167,6 +167,30 @@ def show():
         if single_mode:
             year_to = yr_max
 
+    # Current mode: month range selector
+    _month_names = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December']
+    if single_mode:
+        _today = datetime.date.today()
+        _cur_month = _today.month
+        m1, m2, _ = st.columns([1, 1, 2])
+        with m1:
+            month_from = st.selectbox(
+                "From month", options=list(range(1,13)),
+                format_func=lambda x: _month_names[x-1],
+                index=0, key="ov_month_from",
+                help="Only include transactions from this month onwards"
+            )
+        with m2:
+            month_to = st.selectbox(
+                "To month", options=list(range(1,13)),
+                format_func=lambda x: _month_names[x-1],
+                index=_cur_month-1, key="ov_month_to",
+                help="Only include transactions up to this month"
+            )
+    else:
+        month_from, month_to = 1, 12
+
     year_from = int(year_from)
     year_to   = int(year_to)
 
@@ -232,6 +256,8 @@ def show():
                     lang=lang,
                     reference_date=ref_date if single_mode else None,
                     remove_not_due=remove_not_due if single_mode else False,
+                    month_from=month_from if single_mode else 1,
+                    month_to=month_to if single_mode else 12,
                 )
                 st.session_state["ov_result"]      = result
                 st.session_state["ov_acc"]         = account_filter
