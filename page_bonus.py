@@ -544,7 +544,7 @@ def _show_payout_checker():
         cutoff = st.date_input(
             "Cutoff date for open items",
             value=datetime.date.today().replace(day=21),
-            key="pbc_cutoff",
+            key="pbc_cutoff_w",
             help="Flag open items with due date on or before this date"
         )
     with p2:
@@ -564,7 +564,7 @@ def _show_payout_checker():
                     result, summary = _build_payout_report(df, cutoff, today_str)
                     st.session_state["pbc_result"]  = result
                     st.session_state["pbc_summary"] = summary
-                    st.session_state["pbc_cutoff"]  = cutoff
+                    st.session_state["pbc_cutoff_s"] = cutoff
                 except Exception as e:
                     st.error(f"Error: {e}")
                     import traceback
@@ -575,7 +575,7 @@ def _show_payout_checker():
 
     result  = st.session_state["pbc_result"]
     summary = st.session_state["pbc_summary"]
-    cutoff  = st.session_state.get("pbc_cutoff", cutoff)
+    cutoff  = st.session_state.get("pbc_cutoff_s", cutoff)
     st.markdown("---")
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("✅ X payouts clean",   summary.get("X payouts — clean (no block)", 0))
