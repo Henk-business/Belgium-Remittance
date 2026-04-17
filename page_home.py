@@ -74,6 +74,27 @@ def show():
     with col4:
         st.markdown("""
         <div class="tool-card">
+            <div class="icon">🎁</div>
+            <h3>Bonus & Payout</h3>
+            <p>Match your SAP customers against a bonus partner file,
+               and check that all X payouts are clean with no blocks.</p>
+            <div class="feat">Highlights matching, missing, and extra accounts</div>
+            <div class="feat">Adds SAP-only accounts into the bonus file</div>
+            <div class="feat">Flags X payouts with B or U payment blocks</div>
+            <div class="feat">Shows open invoices on or before a chosen date</div>
+            <div class="feat">Alerts on any B-blocked items in the export</div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.write("")
+        if st.button("Open Bonus & Payout →", use_container_width=True, key="btn_bonus"):
+            st.session_state["active_page"] = "🎁  Bonus & Payout"
+            st.rerun()
+
+    st.write("")
+    col5, col6 = st.columns(2)
+    with col5:
+        st.markdown("""
+        <div class="tool-card">
             <div class="icon">❓</div>
             <h3>Help & FAQ</h3>
             <p>Not sure where to start or how something works? The FAQ covers
@@ -90,6 +111,9 @@ def show():
         if st.button("Open Help & FAQ →", use_container_width=True, key="btn_faq"):
             st.session_state["active_page"] = "❓  Help & FAQ"
             st.rerun()
+
+    with col6:
+        st.write("")
 
     with col3:
         st.markdown("""

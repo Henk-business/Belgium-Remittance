@@ -77,6 +77,7 @@ PAGES = [
     "🔍  Remittance Reconciliation",
     "📂  Account Splitter",
     "📊  Customer Overview",
+    "🎁  Bonus & Payout",
     "❓  Help & FAQ",
 ]
 
@@ -106,6 +107,9 @@ elif page == "📂  Account Splitter":
 elif page == "📊  Customer Overview":
     import page_overview
     page_overview.show()
+elif page == "🎁  Bonus & Payout":
+    import page_bonus
+    page_bonus.show()
 elif page == "❓  Help & FAQ":
     import page_faq
     page_faq.show()

@@ -170,6 +170,40 @@ batch size → Save. Stored in GitHub, applied automatically on every split.
   30351345 + 30104410 that should appear as one combined list.
         """)
 
+    with st.expander("🎁  Bonus & Payout Tools — what do they do?", expanded=False):
+        st.markdown("""
+**Tab 1 — Customer matching**
+
+Compare your SAP customer list with a bonus/partner file to see which accounts match,
+which are in the bonus file but not in SAP, and which SAP accounts are missing from the
+bonus file. Missing SAP accounts are added automatically to the output.
+
+*How to use it:*
+1. Upload your SAP export and the bonus/partner file.
+2. Confirm which column contains the account number in each file.
+3. Click **Run matching**.
+
+*Output:* One Excel with the annotated bonus file (green = match, orange = not in SAP,
+yellow = added from SAP) plus a Summary sheet with counts and a list of missing accounts.
+
+---
+
+**Tab 2 — Payout & block checker**
+
+Scan a SAP export to verify:
+- All **Payment Method X** (payout to customer) rows have no B or U payment block.
+- No **B-blocked** items anywhere in the export.
+- No **open invoices** on or before a chosen cutoff date (default: 21st of the month).
+
+*How to use it:*
+1. Upload the SAP export.
+2. Set the cutoff date for open invoices.
+3. Click **Run check**.
+
+*Output:* Dashboard with counts and colour-coded alerts, plus a downloadable Excel with
+four sheets — X payouts OK, X payouts blocked, B-blocked items, open invoices by cutoff.
+        """)
+
     with st.expander("⚙️  General questions", expanded=False):
         st.markdown("""
 **Are my files stored anywhere?**
