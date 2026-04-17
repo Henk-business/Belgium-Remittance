@@ -173,21 +173,27 @@ def show():
     if single_mode:
         _today = datetime.date.today()
         _cur_month = _today.month
-        m1, m2, _ = st.columns([1, 1, 2])
-        with m1:
+        mt0, mt1, mt2, _ = st.columns([1, 1, 1, 1])
+        with mt0:
+            use_month_filter = st.checkbox(
+                "Filter by month range", value=False, key="ov_use_months",
+            )
+        with mt1:
             month_from = st.selectbox(
                 "From month", options=list(range(1,13)),
                 format_func=lambda x: _month_names[x-1],
                 index=0, key="ov_month_from",
-                help="Only include transactions from this month onwards"
+                disabled=not use_month_filter,
             )
-        with m2:
+        with mt2:
             month_to = st.selectbox(
                 "To month", options=list(range(1,13)),
                 format_func=lambda x: _month_names[x-1],
                 index=_cur_month-1, key="ov_month_to",
-                help="Only include transactions up to this month"
+                disabled=not use_month_filter,
             )
+        if not use_month_filter:
+            month_from, month_to = 1, 12
     else:
         month_from, month_to = 1, 12
 

@@ -325,49 +325,51 @@ def build_overview(df: pd.DataFrame, amt_col: str,
                 by_year[yr].append(grp)
 
     # Sort groups within each year
-    # Single mode: overdue first (most overdue = highest positive arrears at top),
-    #              then not-yet-due newest first
-    # Multi-year: newest net due date first (existing behaviour)
     net_due_col_sort = next((c for c in df.columns
                              if "net due" in c.lower()
                              or "vervaldatum" in c.lower()), None)
     arrears_col_sort = next((c for c in df.columns
                              if "arrears" in c.lower()), None)
     ref_ts_sort = pd.Timestamp(reference_date) if reference_date else pd.Timestamp.now()
+    _single_sort = (year_from == year_to)
 
-    def grp_sort_key(grp, _nd=net_due_col_sort, _dd=doc_date_col,
-                     _arr=arrears_col_sort, _single=(year_from==year_to)):
-        SKIP = {"AB","ZP","DZ"}
-        due_inv, due_all, arrears_vals = [], [], []
+    def _grp_max_arrears(grp, _arr=arrears_col_sort):
+        vals = []
         for row in grp:
-            dt  = str(row.get(doc_type_col,"") or "").strip().upper() if doc_type_col else ""
-            nd  = row.get(_nd) if _nd else None
-            arr = row.get(_arr) if _arr else None
-            if nd is not None and pd.notna(nd):
-                due_all.append(nd)
-                if dt not in SKIP: due_inv.append(nd)
-            if arr is not None and pd.notna(arr):
-                try: arrears_vals.append(float(arr))
+            v = row.get(_arr)
+            if v is not None and pd.notna(v):
+                try: vals.append(float(v))
                 except: pass
-        dates = due_inv or due_all
-        oldest_due = min(dates) if dates else pd.Timestamp.max
-        max_arrears = max(arrears_vals) if arrears_vals else 0
+        return max(vals) if vals else 0
 
-        if _single:
-            # Overdue groups first (positive arrears = past due), sorted by most overdue
-            # Then not-yet-due groups, sorted newest first
-            is_overdue = oldest_due <= ref_ts_sort
+    def _grp_oldest_due(grp, _nd=net_due_col_sort):
+        SKIP = {"AB","ZP","DZ"}
+        dates = []
+        for row in grp:
+            dt = str(row.get(doc_type_col,"") or "").strip().upper() if doc_type_col else ""
+            nd = row.get(_nd) if _nd else None
+            if nd is not None and pd.notna(nd) and dt not in SKIP:
+                dates.append(pd.Timestamp(nd))
+        return min(dates) if dates else pd.Timestamp.max
+
+    def grp_sort_key(grp):
+        oldest  = _grp_oldest_due(grp)
+        max_arr = _grp_max_arrears(grp)
+        if _single_sort:
+            is_overdue = oldest <= ref_ts_sort
             if is_overdue:
-                # Sort key: (0=overdue first, -arrears so highest arrears sorts first)
-                return (0, -max_arrears, oldest_due)
+                # Most overdue (highest arrears) at top → sort by -arrears ascending
+                return (0, -int(max_arr))
             else:
-                # Not yet due: sort newest first within not-yet-due section
-                return (1, pd.Timestamp.max - oldest_due, oldest_due)
+                # Not yet due: most recent due date first → sort by due date ascending
+                # (smallest future date = soonest = first)
+                return (1, int(oldest.timestamp()))
         else:
-            return (0, 0, oldest_due if oldest_due != pd.Timestamp.max else pd.Timestamp.min)
+            ts = oldest.timestamp() if oldest != pd.Timestamp.max else 0
+            return (0, -int(ts))
 
     for yr in years:
-        by_year[yr].sort(key=grp_sort_key, reverse=False)  # ascending by sort key
+        by_year[yr].sort(key=grp_sort_key)
 
     # ── Workbook ──────────────────────────────────────────────────────────────
     wb = openpyxl.Workbook()
