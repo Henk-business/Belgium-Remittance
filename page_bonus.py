@@ -321,11 +321,12 @@ def _is_bonus_file(df) -> bool:
 
 def _build_payout_report(df, cutoff_date, today_str) -> tuple:
     """
-    Works with both:
-    - SAP FBL5N export (standard open items)
-    - Dedicated bonus/payout file (has Bonus, Payment Method, Payment Block, Payout Y/N etc.)
+    Analyse a SAP FBL5N export:
+    - X payouts: flag B or U payment blocks
+    - B-blocked items: any row with Payment Block B
+    - Open invoices on or before cutoff date
     """
-    is_bonus = _is_bonus_file(df)
+    is_bonus = False  # Tab 2 always treats file as SAP export
     col_map   = {c.lower().strip(): c for c in df.columns}
 
     # Column detection
@@ -334,10 +335,7 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
     acc_col       = next((col_map[k] for k in col_map
                           if k in ("account","customer","konto","debitor")), None)
     name_col      = next((col_map[k] for k in col_map if k == "name"), None)
-    if is_bonus:
-        amt_col = next((col_map[k] for k in col_map if "bonus" in k), None)
-    else:
-        amt_col = next((col_map[k] for k in col_map if "amount" in k), None)
+    amt_col       = next((col_map[k] for k in col_map if "amount" in k), None)
     if not amt_col:
         amt_col = next((col_map[k] for k in col_map if "amount" in k or "balance" in k), None)
     due_col       = next((col_map[k] for k in col_map
@@ -392,7 +390,7 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
                     "Payment Block": pb or "—",
                     "Issue": "OK — no block"})
 
-        # B-blocked (any row)
+        # B-blocked items
         if pb == "B":
             b_blocked.append({**base,
                 "Payment Method": pm,
@@ -530,8 +528,6 @@ def _show_payout_checker():
                 try:
                     df = pd.read_excel(sap_file, dtype=str, engine="openpyxl")
                     today_str = datetime.date.today().strftime("%d/%m/%Y")
-                    is_b = _is_bonus_file(df)
-                    st.session_state["pbc_is_bonus"] = is_b
                     result, summary = _build_payout_report(df, cutoff, today_str)
                     st.session_state["pbc_result"]  = result
                     st.session_state["pbc_summary"] = summary
@@ -547,11 +543,6 @@ def _show_payout_checker():
     result  = st.session_state["pbc_result"]
     summary = st.session_state["pbc_summary"]
     cutoff  = st.session_state.get("pbc_cutoff", cutoff)
-    is_b    = st.session_state.get("pbc_is_bonus", False)
-
-    if is_b:
-        st.info("📋 Bonus/payout file detected — using Bonus, Payment Method, Payment Block and Other Open Item columns.")
-
     st.markdown("---")
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("✅ X payouts clean",   summary.get("X payouts — clean (no block)", 0))
