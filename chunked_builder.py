@@ -27,6 +27,29 @@ GREY     = "F2F2F2"
 GREEN_FG = "FF375623"
 RED_FG   = "FFC00000"
 
+
+def _recalc_arrears_df(df, today):
+    """Recalculate Arrears after net due date based on reference date."""
+    import pandas as _pd2
+    ndd_col = next((c for c in df.columns if "net due" in c.lower()), None)
+    arr_col = next((c for c in df.columns if "arrears" in c.lower()), None)
+    if not ndd_col or not arr_col:
+        return df
+    df = df.copy()
+    ref_ts = _pd2.Timestamp(today)
+    due    = _pd2.to_datetime(df[ndd_col], errors="coerce")
+    mask   = due.notna()
+    days   = (ref_ts - due[mask]).dt.days
+    # Write as same dtype as the column (str or numeric)
+    if hasattr(df[arr_col], 'dtype') and str(df[arr_col].dtype) == 'string':
+        df.loc[mask, arr_col] = days.astype(str)
+    else:
+        try:
+            df[arr_col] = _pd2.to_numeric(df[arr_col], errors='coerce')
+            df.loc[mask, arr_col] = days
+        except Exception:
+            df.loc[mask, arr_col] = days.astype(str)
+    return df
 def _thin():
     s = Side(style="thin", color="CBD5E1")
     return Border(left=s, right=s, top=s, bottom=s)
@@ -153,6 +176,7 @@ def build_chunked_sheet(acc_df: pd.DataFrame, account_id: str,
     """
     if today is None:
         today = datetime.date.today()
+    acc_df = _recalc_arrears_df(acc_df, today)
     today_str = pd.Timestamp(today).strftime("%d/%m/%Y")
 
     # ── Apply column selection ────────────────────────────────────────────────

@@ -185,6 +185,28 @@ def prepare_df(file_obj):
     return df, amt_col
 
 
+def _recalc_arrears(df: pd.DataFrame, reference_date) -> pd.DataFrame:
+    """Recalculate arrears based on reference date: (ref - net_due_date).days"""
+    if reference_date is None:
+        return df
+    ndd_col = next((c for c in df.columns if "net due" in c.lower()), None)
+    arr_col = next((c for c in df.columns if "arrears" in c.lower()), None)
+    if not ndd_col or not arr_col:
+        return df
+    df = df.copy()
+    ref_ts = pd.Timestamp(reference_date)
+    due    = pd.to_datetime(df[ndd_col], errors="coerce")
+    mask   = due.notna()
+    days   = (ref_ts - due[mask]).dt.days
+    if str(df[arr_col].dtype) == 'string':
+        df.loc[mask, arr_col] = days.astype(str)
+    else:
+        try:
+            df[arr_col] = pd.to_numeric(df[arr_col], errors='coerce')
+            df.loc[mask, arr_col] = days
+        except Exception:
+            df.loc[mask, arr_col] = days.astype(str)
+    return df
 def _parse_groups(df, amt_col):
     """
     Split df into groups using blank Account rows as separators.
@@ -292,6 +314,10 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
         df[amt_col] = pd.to_numeric(df[amt_col], errors="coerce")
     if arr_col:
         df[arr_col] = pd.to_numeric(df[arr_col], errors="coerce")
+
+    # Recalculate arrears based on reference date
+    if reference_date:
+        df = _recalc_arrears(df, reference_date)
 
     # ── Split into clearing-doc groups ────────────────────────────────────────
     groups = []
@@ -469,17 +495,18 @@ def build_overview(df: pd.DataFrame, amt_col: str,
                    lang:          str = "en",
                    remove_overdues: bool = False) -> BytesIO:
     """
-    Multi-year overview — same flat format as build_current_overview but grouped by year.
-    Each year has a dark-blue banner + column headers, then flat rows, then a year total.
-    Grand total at bottom. Yellow rows for zero-netting groups.
+    Multi-year overview — same flat row style as build_current_overview,
+    but grouped by year with dark-blue year banners, column headers per year,
+    medium-blue year totals, and a grand total at the bottom.
+    Within each year: sorted newest net due date first.
+    Yellow rows for zero-netting groups.
     """
     import datetime as _dt
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
-    # ── Colours (same as build_current_overview) ──────────────────────────────
-    HDR_FILL  = "FF1F3864"
-    BAND_FILL = "FF2E75B6"
+    HDR_FILL  = "FF1F3864"   # dark blue  — year banner + grand total
+    BAND_FILL = "FF2E75B6"   # mid blue   — column headers + year total
     ROW_WHITE = "FFFFFFFF"
     ROW_BLUE  = "FFEBF3FB"
     ROW_YELL  = "FFFFFF00"
@@ -497,7 +524,6 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     def _aln(h="left"):
         return Alignment(horizontal=h, vertical="center", wrap_text=False)
 
-    # ── Columns ───────────────────────────────────────────────────────────────
     STRIP = {
         "Reason code","Clerk Abbreviation","Cleared/open items symbol",
         "Disputed item","Payment Block","Net due date symbol",
@@ -508,7 +534,7 @@ def build_overview(df: pd.DataFrame, amt_col: str,
         "clearing_date","clearing_doc","text",
     }
     display_cols = [c for c in df.columns if c not in STRIP]
-    ncols = len(display_cols)
+    ncols  = len(display_cols)
     col_widths = {
         "Account":10,"Assignment":14,"Document Number":18,
         "Reference Key 3":14,"Document Date":13,"Net due date":13,
@@ -519,36 +545,34 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     }
     amt_ci = (display_cols.index(amt_col)+1) if amt_col and amt_col in display_cols else None
 
-    # ── Filters ───────────────────────────────────────────────────────────────
-    ndd_col = next((c for c in df.columns if "net due" in c.lower()), None)
-    arr_col = next((c for c in df.columns if "arrears" in c.lower()), None)
+    ndd_col      = next((c for c in df.columns if "net due"       in c.lower()), None)
+    arr_col      = next((c for c in df.columns if "arrears"       in c.lower()), None)
     doc_type_col = next((c for c in df.columns if "document type" in c.lower()), None)
     doc_date_col = next((c for c in df.columns if c.lower() == "document date"), None)
-    acc_col = next((c for c in df.columns if c.lower() in ("account","konto","debitor")), None)
+    acc_col      = next((c for c in df.columns if c.lower() in ("account","konto","debitor")), None)
 
-    if ndd_col:
-        df[ndd_col] = pd.to_datetime(df[ndd_col], errors="coerce")
-    if doc_date_col:
-        df[doc_date_col] = pd.to_datetime(df[doc_date_col], errors="coerce")
-    if amt_col:
-        df[amt_col] = pd.to_numeric(df[amt_col], errors="coerce")
-    if arr_col:
-        df[arr_col] = pd.to_numeric(df[arr_col], errors="coerce")
+    if ndd_col:      df[ndd_col]      = pd.to_datetime(df[ndd_col],      errors="coerce")
+    if doc_date_col: df[doc_date_col] = pd.to_datetime(df[doc_date_col], errors="coerce")
+    if amt_col:      df[amt_col]      = pd.to_numeric( df[amt_col],      errors="coerce")
+    if arr_col:      df[arr_col]      = pd.to_numeric( df[arr_col],      errors="coerce")
 
     if remove_overdues and arr_col:
         df = df[df[arr_col].fillna(0) <= 0].copy()
 
-    # ── Parse groups and assign years ─────────────────────────────────────────
-    all_groups = _parse_groups(df, amt_col)
+    # Recalculate arrears to today for multi-year
+    import datetime as _dt2
+    df = _recalc_arrears(df, _dt2.date.today())
 
-    SKIP = {"AB", "ZP", "DZ"}
-    by_year = {yr: [] for yr in range(year_from, year_to + 1)}
+    # Parse groups and bucket by year
+    all_groups = _parse_groups(df, amt_col)
+    SKIP = {"AB","ZP","DZ"}
+    by_year = {yr: [] for yr in range(year_from, year_to+1)}
     for grp in all_groups:
         yr = _group_year(grp, doc_date_col, doc_type_col, amt_col)
         if yr is not None and year_from <= yr <= year_to:
             by_year[yr].append(grp)
 
-    # Sort each year: newest net due date first
+    # Sort each year newest net due date first
     def _oldest_due(grp):
         dates = []
         for row in grp:
@@ -561,16 +585,15 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     for yr in by_year:
         by_year[yr].sort(key=lambda g: -int(_oldest_due(g).timestamp()))
 
-    # ── Build workbook ────────────────────────────────────────────────────────
+    # Build workbook
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Overview"
-
     for ci, col in enumerate(display_cols, 1):
-        ws.column_dimensions[get_column_letter(ci)].width = col_widths.get(col, max(len(col)+2,12))
+        ws.column_dimensions[get_column_letter(ci)].width = col_widths.get(col, max(len(col)+2, 12))
 
     r = 1
-    row_idx = 0
+    row_idx   = 0
     grand_total = 0.0
 
     for yr in sorted(by_year.keys()):
@@ -579,38 +602,37 @@ def build_overview(df: pd.DataFrame, amt_col: str,
             continue
 
         yr_total = sum(
-            float(row.get(amt_col,0) or 0)
+            float(row.get(amt_col, 0) or 0)
             for grp in groups for row in grp
             if amt_col and pd.notna(row.get(amt_col))
         )
         grand_total += yr_total
 
-        # Year banner
+        # ── Year banner (dark blue) ───────────────────────────────────────────
         for ci in range(1, ncols+1):
             cell = ws.cell(r, ci)
             cell.fill = _fill(HDR_FILL)
             cell.border = _thin()
-            if ci == 1:
-                cell.value = f"{yr}  ·  {len(groups)} group(s)"
-                cell.font = _font(bold=True, color=COL_WHT, size=11)
-                cell.alignment = _aln("left")
+        ws.cell(r, 1).value = str(yr)
+        ws.cell(r, 1).font  = _font(bold=True, color=COL_WHT, size=12)
+        ws.cell(r, 1).alignment = _aln("left")
         ws.row_dimensions[r].height = 22
         r += 1
 
-        # Column headers
+        # ── Column headers (mid blue) ─────────────────────────────────────────
         for ci, h in enumerate(display_cols, 1):
             cell = ws.cell(r, ci, value=h)
-            cell.font = _font(bold=True, color=COL_WHT, size=9)
-            cell.fill = _fill(BAND_FILL)
+            cell.font      = _font(bold=True, color=COL_WHT, size=9)
+            cell.fill      = _fill(BAND_FILL)
             cell.alignment = _aln("center")
-            cell.border = _thin()
+            cell.border    = _thin()
         ws.row_dimensions[r].height = 15
         r += 1
 
-        # Data rows
+        # ── Data rows ─────────────────────────────────────────────────────────
         for grp in groups:
             grp_total = sum(
-                float(row.get(amt_col,0) or 0)
+                float(row.get(amt_col, 0) or 0)
                 for row in grp if amt_col and pd.notna(row.get(amt_col))
             )
             for row in grp:
@@ -626,8 +648,8 @@ def build_overview(df: pd.DataFrame, amt_col: str,
                         elif val == int(val): val = int(val)
                     is_amt = amt_col and col == amt_col
                     cell = ws.cell(r, ci, value=val if val != "" else None)
-                    if is_amt and isinstance(val, (int,float)) and val is not None:
-                        cell.font = _font(color=COL_POS if val>0 else (COL_NEG if val<0 else COL_BLK))
+                    if is_amt and isinstance(val, (int, float)) and val is not None:
+                        cell.font = _font(color=COL_POS if val > 0 else (COL_NEG if val < 0 else COL_BLK))
                         cell.number_format = "#,##0.00"
                         cell.alignment = _aln("right")
                     elif isinstance(val, _dt.datetime):
@@ -637,62 +659,60 @@ def build_overview(df: pd.DataFrame, amt_col: str,
                     else:
                         cell.font = _font()
                         cell.alignment = _aln("left")
-                    cell.fill = _fill(bg)
+                    cell.fill   = _fill(bg)
                     cell.border = _thin()
                 ws.row_dimensions[r].height = 13
                 r += 1
                 row_idx += 1
 
-            # Yellow row for zero-netting groups
+            # Yellow row when group nets to zero
             if abs(grp_total) < 0.02:
                 for ci in range(1, ncols+1):
                     cell = ws.cell(r, ci)
-                    cell.fill = _fill(ROW_YELL)
+                    cell.fill   = _fill(ROW_YELL)
                     cell.border = _thin()
                     if ci == amt_ci:
                         cell.value = 0
-                        cell.font = _font(bold=True)
+                        cell.font  = _font(bold=True)
                         cell.number_format = "#,##0.00"
                         cell.alignment = _aln("right")
                 ws.row_dimensions[r].height = 8
                 r += 1
                 row_idx += 1
 
-        # Year total row
+        # ── Year total (mid blue) ─────────────────────────────────────────────
         for ci in range(1, ncols+1):
             cell = ws.cell(r, ci)
-            cell.fill = _fill(BAND_FILL)
+            cell.fill   = _fill(BAND_FILL)
             cell.border = _thin()
-            if ci == 1:
-                cell.value = f"{yr} — Total"
-                cell.font = _font(bold=True, color=COL_WHT, size=10)
-                cell.alignment = _aln("left")
-            elif ci == amt_ci:
-                cell.value = yr_total
-                cell.font = _font(bold=True, color=COL_WHT, size=10)
-                cell.number_format = "#,##0.00"
-                cell.alignment = _aln("right")
+        ws.cell(r, 1).value     = f"{yr} — Total"
+        ws.cell(r, 1).font      = _font(bold=True, color=COL_WHT, size=10)
+        ws.cell(r, 1).alignment = _aln("left")
+        if amt_ci:
+            ws.cell(r, amt_ci).value          = yr_total
+            ws.cell(r, amt_ci).font           = _font(bold=True, color=COL_WHT, size=10)
+            ws.cell(r, amt_ci).number_format  = "#,##0.00"
+            ws.cell(r, amt_ci).alignment      = _aln("right")
         ws.row_dimensions[r].height = 18
         r += 1
 
-        # Small gap between years
-        ws.row_dimensions[r].height = 6
+        # Small gap before next year
+        ws.row_dimensions[r].height = 8
         r += 1
 
-    # Grand total
+    # ── Grand total (dark blue) ───────────────────────────────────────────────
     for ci in range(1, ncols+1):
         cell = ws.cell(r, ci)
-        cell.fill = _fill(HDR_FILL)
+        cell.fill   = _fill(HDR_FILL)
         cell.border = _thin()
-        if ci == 1:
-            cell.value = "Net Balance"
-            cell.font = _font(bold=True, color=COL_WHT, size=11)
-            cell.alignment = _aln("left")
-        elif ci == amt_ci:
-            cell.value = grand_total
-            cell.font = _font(bold=True, color=COL_WHT, size=12)
-            cell.number_format = "#,##0.00"
-            cell.alignment = _aln("right")
+    ws.cell(r, 1).value     = "Net Balance"
+    ws.cell(r, 1).font      = _font(bold=True, color=COL_WHT, size=11)
+    ws.cell(r, 1).alignment = _aln("left")
+    if amt_ci:
+        ws.cell(r, amt_ci).value         = grand_total
+        ws.cell(r, amt_ci).font          = _font(bold=True, color=COL_WHT, size=12)
+        ws.cell(r, amt_ci).number_format = "#,##0.00"
+        ws.cell(r, amt_ci).alignment     = _aln("right")
     ws.row_dimensions[r].height = 22
     ws.freeze_panes = "A2"
 

@@ -43,6 +43,29 @@ DATA_COLS = [
 ]
 
 
+
+def _recalc_arrears_df(df, today):
+    """Recalculate Arrears after net due date based on reference date."""
+    import pandas as _pd2
+    ndd_col = next((c for c in df.columns if "net due" in c.lower()), None)
+    arr_col = next((c for c in df.columns if "arrears" in c.lower()), None)
+    if not ndd_col or not arr_col:
+        return df
+    df = df.copy()
+    ref_ts = _pd2.Timestamp(today)
+    due    = _pd2.to_datetime(df[ndd_col], errors="coerce")
+    mask   = due.notna()
+    days   = (ref_ts - due[mask]).dt.days
+    # Write as same dtype as the column (str or numeric)
+    if hasattr(df[arr_col], 'dtype') and str(df[arr_col].dtype) == 'string':
+        df.loc[mask, arr_col] = days.astype(str)
+    else:
+        try:
+            df[arr_col] = _pd2.to_numeric(df[arr_col], errors='coerce')
+            df.loc[mask, arr_col] = days
+        except Exception:
+            df.loc[mask, arr_col] = days.astype(str)
+    return df
 def _f(rgb):
     return PatternFill("solid", fgColor=rgb)
 
@@ -107,6 +130,7 @@ def build_poc_sheet(acc_df: pd.DataFrame, account_id: str,
     """Build a POC-grouped Excel sheet matching the NEGOBOISSONS template."""
     if today is None:
         today = datetime.date.today()
+    acc_df = _recalc_arrears_df(acc_df, today)
 
     # ── Load POC names from template ──────────────────────────────────────────
     poc_names = _load_poc_names(template_bytes) if template_bytes else {}

@@ -179,10 +179,34 @@ def _safe_tab(name, idx):
     return (name[:28] if len(name) > 28 else name) or f"Acct_{idx+1}"
 
 
+def _recalc_arrears_df(df, today):
+    """Recalculate Arrears after net due date based on reference date."""
+    import pandas as _pd2
+    ndd_col = next((c for c in df.columns if "net due" in c.lower()), None)
+    arr_col = next((c for c in df.columns if "arrears" in c.lower()), None)
+    if not ndd_col or not arr_col:
+        return df
+    df = df.copy()
+    ref_ts = _pd2.Timestamp(today)
+    due    = _pd2.to_datetime(df[ndd_col], errors="coerce")
+    mask   = due.notna()
+    days   = (ref_ts - due[mask]).dt.days
+    # Write as same dtype as the column (str or numeric)
+    if hasattr(df[arr_col], 'dtype') and str(df[arr_col].dtype) == 'string':
+        df.loc[mask, arr_col] = days.astype(str)
+    else:
+        try:
+            df[arr_col] = _pd2.to_numeric(df[arr_col], errors='coerce')
+            df.loc[mask, arr_col] = days
+        except Exception:
+            df.loc[mask, arr_col] = days.astype(str)
+    return df
 def build_split_workbook(account_data, amount_col, today=None, title_prefix="", templates=None):
     if today is None:
         today = datetime.date.today()
     today_str = pd.Timestamp(today).strftime("%d/%m/%Y")
+    # Recalculate arrears for each account df based on reference date
+    account_data = {acc: _recalc_arrears_df(df, today) for acc, df in account_data.items()}
 
     wb = openpyxl.Workbook()
     _default_sheet = wb.active  # track default sheet to remove after adding real sheets
@@ -388,6 +412,8 @@ def build_template_sheet(account_id: str, acc_df: pd.DataFrame,
 
 
 def build_individual_sheet(acc_id: str, acc_df, amount_col: str, today=None) -> bytes:
+    if today is not None:
+        acc_df = _recalc_arrears_df(acc_df, today)
     """
     Build the correct individual workbook for one account.
     - If account is in CHUNKED_ACCOUNTS: apply chunking rules

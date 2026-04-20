@@ -35,6 +35,29 @@ NEG_FG   = "FF375623"   # green = negative (credits)
 BLACK_FG = "FF000000"
 
 
+
+def _recalc_arrears_df(df, today):
+    """Recalculate Arrears after net due date based on reference date."""
+    import pandas as _pd2
+    ndd_col = next((c for c in df.columns if "net due" in c.lower()), None)
+    arr_col = next((c for c in df.columns if "arrears" in c.lower()), None)
+    if not ndd_col or not arr_col:
+        return df
+    df = df.copy()
+    ref_ts = _pd2.Timestamp(today)
+    due    = _pd2.to_datetime(df[ndd_col], errors="coerce")
+    mask   = due.notna()
+    days   = (ref_ts - due[mask]).dt.days
+    # Write as same dtype as the column (str or numeric)
+    if hasattr(df[arr_col], 'dtype') and str(df[arr_col].dtype) == 'string':
+        df.loc[mask, arr_col] = days.astype(str)
+    else:
+        try:
+            df[arr_col] = _pd2.to_numeric(df[arr_col], errors='coerce')
+            df.loc[mask, arr_col] = days
+        except Exception:
+            df.loc[mask, arr_col] = days.astype(str)
+    return df
 def _fill(rgb): return PatternFill("solid", fgColor=rgb)
 def _font(bold=False, color=BLACK_FG, size=10):
     return Font(name="Arial", bold=bold, color=color, size=size)
@@ -250,6 +273,7 @@ def build_merged_workbook(account_dfs: dict, template_bytes: bytes,
     """
     if today is None:
         today = datetime.date.today()
+    account_dfs = {acc: _recalc_arrears_df(df, today) for acc, df in account_dfs.items()}
     today_str = pd.Timestamp(today).strftime("%d/%m/%Y")
 
     if not template_bytes:
@@ -288,6 +312,8 @@ def build_flat_workbook(account_dfs: dict, amount_col: str,
     if today is None:
         today = _dt.date.today()
     today_str = pd.Timestamp(today).strftime("%d/%m/%Y")
+    # Recalculate arrears based on reference date
+    account_dfs = {acc: _recalc_arrears_df(df, today) for acc, df in account_dfs.items()}
 
     from splitter_engine import translate_doc_types
     # Concatenate all account dfs with translation applied
