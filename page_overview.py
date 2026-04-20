@@ -74,9 +74,14 @@ def show():
          or "belegdatum" in c.lower()), None
     )
     if date_col_for_range and date_col_for_range in df.columns:
-        valid = df[date_col_for_range].dropna()
-        yr_min = int(valid.min().year) if len(valid) else datetime.date.today().year - 5
-        yr_max = int(valid.max().year) if len(valid) else datetime.date.today().year
+        import pandas as _pd2
+        parsed = _pd2.to_datetime(df[date_col_for_range], errors="coerce").dropna()
+        if len(parsed):
+            yr_min = int(parsed.min().year)
+            yr_max = int(parsed.max().year)
+        else:
+            yr_min = datetime.date.today().year - 5
+            yr_max = datetime.date.today().year
     else:
         yr_min = datetime.date.today().year - 5
         yr_max = datetime.date.today().year
