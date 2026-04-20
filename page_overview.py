@@ -252,19 +252,26 @@ def show():
             st.error("No data found for the selected account.")
             return
 
-        with st.spinner(f"Building {n_years}-year overview…"):
+        _spinner_msg = "Building current overview…" if single_mode else f"Building {n_years}-year overview…"
+        with st.spinner(_spinner_msg):
             try:
-                result = build_overview(
-                    work_df, amt_col,
-                    year_from, year_to,
-                    customer_name=customer_name.strip(),
-                    account_id=(account_filter if account_filter != "All accounts" else ""),
-                    lang=lang,
-                    reference_date=ref_date if single_mode else None,
-                    remove_not_due=remove_not_due if single_mode else False,
-                    month_from=month_from if single_mode else 1,
-                    month_to=month_to if single_mode else 12,
-                )
+                if single_mode:
+                    result = build_current_overview(
+                        work_df, amt_col,
+                        reference_date=ref_date,
+                        remove_not_due=remove_not_due,
+                        remove_overdues=remove_overdues,
+                        month_from=month_from,
+                        month_to=month_to,
+                    )
+                else:
+                    result = build_overview(
+                        work_df, amt_col,
+                        year_from, year_to,
+                        customer_name=customer_name.strip(),
+                        account_id=(account_filter if account_filter != "All accounts" else ""),
+                        lang=lang,
+                    )
                 st.session_state["ov_result"]      = result
                 st.session_state["ov_acc"]         = account_filter
                 st.session_state["ov_from"]        = year_from

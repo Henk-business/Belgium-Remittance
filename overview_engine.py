@@ -249,6 +249,196 @@ def _group_year(group, doc_date_col, doc_type_col, amt_col):
 # ── BUILD ─────────────────────────────────────────────────────────────────────
 
 
+def build_current_overview(df: pd.DataFrame, amt_col: str,
+                            reference_date=None,
+                            remove_not_due: bool = False,
+                            remove_overdues: bool = False,
+                            month_from: int = 1,
+                            month_to: int = 12) -> BytesIO:
+    """
+    Current overview — flat format matching the NL export style:
+    - Alternating white / light-blue rows
+    - Yellow row when a clearing group nets to zero
+    - Sorted newest net due date first
+    - No blank rows between groups
+    """
+    import datetime as _dt
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    ref_ts = pd.Timestamp(reference_date) if reference_date else pd.Timestamp.now()
+    ndd_col = next((c for c in df.columns if "net due" in c.lower()), None)
+    arr_col = next((c for c in df.columns if "arrears" in c.lower()), None)
+    doc_type_col = next((c for c in df.columns if "document type" in c.lower()), None)
+    acc_col = next((c for c in df.columns if c.lower() in ("account","konto","debitor")), None)
+
+    # ── Filters ───────────────────────────────────────────────────────────────
+    if remove_not_due and ndd_col:
+        due = pd.to_datetime(df[ndd_col], errors="coerce")
+        df  = df[due.isna() | (due <= ref_ts)].copy()
+
+    if remove_overdues and ndd_col and arr_col:
+        # Remove rows where arrears > 0 (already past due date)
+        arr = pd.to_numeric(df[arr_col], errors="coerce").fillna(0)
+        df  = df[arr <= 0].copy()
+
+    if (month_from != 1 or month_to != 12) and ndd_col:
+        due2 = pd.to_datetime(df[ndd_col], errors="coerce")
+        df   = df[due2.isna() | ((due2.dt.month >= month_from) & (due2.dt.month <= month_to))].copy()
+
+    if ndd_col:
+        df[ndd_col] = pd.to_datetime(df[ndd_col], errors="coerce")
+    if amt_col:
+        df[amt_col] = pd.to_numeric(df[amt_col], errors="coerce")
+    if arr_col:
+        df[arr_col] = pd.to_numeric(df[arr_col], errors="coerce")
+
+    # ── Split into clearing-doc groups ────────────────────────────────────────
+    groups = []
+    current = []
+    for _, row in df.iterrows():
+        acc = str(row.get(acc_col, "") or "").strip() if acc_col else ""
+        if acc and acc not in ("nan", "None", ""):
+            current.append(row)
+        else:
+            if current:
+                groups.append(current)
+                current = []
+    if current:
+        groups.append(current)
+
+    # ── Sort groups newest net due first ──────────────────────────────────────
+    SKIP = {"AB", "ZP", "DZ"}
+    def _oldest_due(grp):
+        dates = []
+        for row in grp:
+            dt = str(row.get(doc_type_col, "") or "").strip().upper() if doc_type_col else ""
+            nd = row.get(ndd_col) if ndd_col else None
+            if nd is not None and pd.notna(nd) and dt not in SKIP:
+                dates.append(pd.Timestamp(nd))
+        return min(dates) if dates else pd.Timestamp.min
+
+    groups.sort(key=lambda g: -int(_oldest_due(g).timestamp()))
+
+    # ── Colours ───────────────────────────────────────────────────────────────
+    HDR_FILL  = "FF1F3864"   # dark blue header
+    ROW_WHITE = "FFFFFFFF"
+    ROW_BLUE  = "FFEBF3FB"   # light blue alternate
+    ROW_YELL  = "FFFFFF00"   # yellow subtotal
+    COL_POS   = "FFC00000"   # red = positive amount
+    COL_NEG   = "FF375623"   # green = negative amount
+    COL_WHT   = "FFFFFFFF"
+    COL_BLK   = "FF000000"
+
+    def _fill(rgb): return PatternFill("solid", fgColor=rgb)
+    def _font(bold=False, color=COL_BLK, size=9):
+        return Font(name="Arial", bold=bold, color=color, size=size)
+    def _thin():
+        s = Side(style="thin", color="DDDDDD")
+        return Border(left=s, right=s, top=s, bottom=s)
+    def _aln(h="left"):
+        return Alignment(horizontal=h, vertical="center", wrap_text=False)
+
+    # ── Columns to display ────────────────────────────────────────────────────
+    STRIP = {
+        "Reason code","Clerk Abbreviation","Cleared/open items symbol",
+        "Disputed item","Payment Block","Net due date symbol",
+        "Text","Clearing date","Clearing Document","Dunning Level",
+        "Last Dunned","Reversed with","Document Header Text","User Name",
+        "Special G/L ind.","Billing Document","Reference Key 1",
+        "doc_number_str","ref","sap_class","is_open","header_text",
+        "clearing_date","clearing_doc","text",
+    }
+    display_cols = [c for c in df.columns if c not in STRIP]
+    ncols = len(display_cols)
+
+    col_widths = {
+        "Account":10,"Assignment":14,"Document Number":18,
+        "Reference Key 3":14,"Document Date":13,"Net due date":13,
+        "Document Type":13,"Amount in local currency":20,
+        "Arrears after net due date":24,"Payment Method":13,
+        "G/L Account":18,"Case ID":10,"Status":10,
+        "Dunning Block":13,"Disputed item":13,
+    }
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Overview"
+
+    for ci, col in enumerate(display_cols, 1):
+        ws.column_dimensions[get_column_letter(ci)].width = col_widths.get(col, max(len(col)+2,12))
+
+    # Header row
+    for ci, h in enumerate(display_cols, 1):
+        cell = ws.cell(1, ci, value=h)
+        cell.font = _font(bold=True, color=COL_WHT, size=9)
+        cell.fill = _fill(HDR_FILL)
+        cell.alignment = _aln("center")
+        cell.border = _thin()
+    ws.row_dimensions[1].height = 15
+    ws.freeze_panes = "A2"
+
+    r = 2
+    row_idx = 0  # for alternating colour
+
+    for grp in groups:
+        grp_total = sum(
+            float(row.get(amt_col, 0) or 0)
+            for row in grp if amt_col and pd.notna(row.get(amt_col))
+        )
+
+        for row in grp:
+            bg = ROW_WHITE if row_idx % 2 == 0 else ROW_BLUE
+            for ci, col in enumerate(display_cols, 1):
+                val = row.get(col, "")
+                if isinstance(val, pd.Timestamp):
+                    val = val.to_pydatetime()
+                elif not isinstance(val, (str, int, float, _dt.datetime, type(None))):
+                    val = str(val)
+                elif isinstance(val, float):
+                    if val != val:  # NaN
+                        val = None
+                    elif val == int(val):
+                        val = int(val)
+                is_amt = amt_col and col == amt_col
+                cell = ws.cell(r, ci, value=val if val != "" else None)
+                if is_amt and isinstance(val, (int, float)) and val is not None:
+                    cell.font = _font(color=COL_POS if val > 0 else (COL_NEG if val < 0 else COL_BLK))
+                    cell.number_format = "#,##0.00"
+                    cell.alignment = _aln("right")
+                elif isinstance(val, _dt.datetime):
+                    cell.font = _font()
+                    cell.number_format = "DD/MM/YYYY"
+                    cell.alignment = _aln("left")
+                else:
+                    cell.font = _font()
+                    cell.alignment = _aln("left")
+                cell.fill = _fill(bg)
+                cell.border = _thin()
+            ws.row_dimensions[r].height = 13
+            r += 1
+            row_idx += 1
+
+        # Yellow subtotal row when group nets to zero
+        if abs(grp_total) < 0.02:
+            for ci in range(1, ncols + 1):
+                cell = ws.cell(r, ci)
+                cell.fill = _fill(ROW_YELL)
+                cell.border = _thin()
+                if ci == (display_cols.index(amt_col) + 1 if amt_col in display_cols else 8):
+                    cell.value = 0
+                    cell.font = _font(bold=True)
+                    cell.number_format = "#,##0.00"
+                    cell.alignment = _aln("right")
+            ws.row_dimensions[r].height = 8
+            r += 1
+            row_idx += 1
+
+    out = BytesIO()
+    wb.save(out); out.seek(0)
+    return out
+
+
 def build_overview(df: pd.DataFrame, amt_col: str,
                    year_from: int, year_to: int,
                    customer_name:  str  = "",
