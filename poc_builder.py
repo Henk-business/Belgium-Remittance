@@ -39,6 +39,7 @@ COL_WIDTHS = [22, 11, 16.5, 14.8, 14, 11.5, 14.2, 22, 13, 13, 13, 13, 20.3]
 DATA_COLS = [
     "Account", "Assignment", "Document Number", "Reference Key 3",
     "Document Date", "Net due date", "Document Type", "Amount in local currency",
+    "Arrears after net due date",
 ]
 
 
