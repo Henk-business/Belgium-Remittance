@@ -128,74 +128,69 @@ def show():
             st.text_input("Account", value=account_filter,
                           key="ov_acc_disp_w", disabled=True)
 
-    # ── Row 2: mode-specific settings ─────────────────────────────────────────
-    r2a, r2b, r2c, r2d = st.columns(4)
-    with r2a:
-        # Current only: reference date
-        ref_date = st.date_input(
-            "Reference date",
-            value=datetime.date.today(),
-            key="ov_refdate_w",
-            disabled=not single_mode,
-            help="Only used in Current overview mode",
-        )
-    with r2b:
-        # Current only: remove not due
-        remove_not_due = st.checkbox(
-            "Remove invoices not yet due",
-            value=True, key="ov_remove_nd",
-            disabled=not single_mode,
-        )
-    with r2c:
-        # Multi-year only: from year
-        year_from = st.number_input(
-            "From year", min_value=2000, max_value=2099,
-            value=yr_min, step=1, key="ov_from_input",
-            disabled=single_mode,
-            help="Only used in Multi-year mode",
-        )
-        if single_mode:
-            year_from = yr_max
-    with r2d:
-        # Multi-year only: to year
-        year_to = st.number_input(
-            "To year", min_value=2000, max_value=2099,
-            value=yr_max, step=1, key="ov_to_input",
-            disabled=single_mode,
-            help="Only used in Multi-year mode",
-        )
-        if single_mode:
-            year_to = yr_max
-
-    # Current mode: month range selector
+    # ── Mode-specific settings ────────────────────────────────────────────────
     _month_names = ['January','February','March','April','May','June',
                     'July','August','September','October','November','December']
+
     if single_mode:
-        _today = datetime.date.today()
-        _cur_month = _today.month
-        mt0, mt1, mt2, _ = st.columns([1, 1, 1, 1])
-        with mt0:
+        sc1, sc2, sc3 = st.columns(3)
+        with sc1:
+            ref_date = st.date_input(
+                "Reference date", value=datetime.date.today(),
+                key="ov_refdate_w",
+                help="Invoices due after this date are removed when 'Remove not yet due' is on",
+            )
+        with sc2:
+            remove_not_due = st.checkbox(
+                "Remove not yet due", value=True, key="ov_remove_nd",
+            )
+        with sc3:
+            remove_overdues = st.checkbox(
+                "Remove current overdues", value=False, key="ov_remove_ov",
+                help="Remove rows where arrears > 0 (invoices already past due date)",
+            )
+        year_from = year_to = yr_max
+
+        mc0, mc1, mc2, _ = st.columns([1, 1, 1, 1])
+        with mc0:
             use_month_filter = st.checkbox(
                 "Filter by month range", value=False, key="ov_use_months",
             )
-        with mt1:
+        with mc1:
             month_from = st.selectbox(
-                "From month", options=list(range(1,13)),
+                "From month", list(range(1, 13)),
                 format_func=lambda x: _month_names[x-1],
                 index=0, key="ov_month_from",
                 disabled=not use_month_filter,
             )
-        with mt2:
+        with mc2:
             month_to = st.selectbox(
-                "To month", options=list(range(1,13)),
+                "To month", list(range(1, 13)),
                 format_func=lambda x: _month_names[x-1],
-                index=_cur_month-1, key="ov_month_to",
+                index=datetime.date.today().month - 1, key="ov_month_to",
                 disabled=not use_month_filter,
             )
         if not use_month_filter:
             month_from, month_to = 1, 12
     else:
+        ref_date       = datetime.date.today()
+        remove_not_due = False
+        remove_overdues = False
         month_from, month_to = 1, 12
+
+        mc1, mc2 = st.columns(2)
+        with mc1:
+            year_from = st.number_input(
+                "From year", min_value=2000, max_value=2099,
+                value=yr_min, step=1, key="ov_from_input",
+                help="Start year for multi-year overview",
+            )
+        with mc2:
+            year_to = st.number_input(
+                "To year", min_value=2000, max_value=2099,
+                value=yr_max, step=1, key="ov_to_input",
+                help="End year for multi-year overview",
+            )
 
     year_from = int(year_from)
     year_to   = int(year_to)
