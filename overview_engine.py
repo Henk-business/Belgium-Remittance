@@ -434,369 +434,267 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
             r += 1
             row_idx += 1
 
+    # ── Grand total row ───────────────────────────────────────────────────────
+    grand_total = sum(
+        float(row.get(amt_col, 0) or 0)
+        for grp in groups for row in grp
+        if amt_col and pd.notna(row.get(amt_col))
+    )
+    amt_ci = (display_cols.index(amt_col) + 1) if amt_col and amt_col in display_cols else None
+    for ci in range(1, ncols + 1):
+        cell = ws.cell(r, ci)
+        cell.fill = _fill(HDR_FILL)
+        cell.border = _thin()
+        if ci == 1:
+            cell.value = "Net Balance"
+            cell.font = _font(bold=True, color=COL_WHT, size=10)
+            cell.alignment = _aln("left")
+        elif ci == amt_ci:
+            cell.value = grand_total
+            cell.font = _font(bold=True, color=COL_WHT, size=11)
+            cell.number_format = "#,##0.00"
+            cell.alignment = _aln("right")
+    ws.row_dimensions[r].height = 20
+
     out = BytesIO()
     wb.save(out); out.seek(0)
     return out
 
 
+
 def build_overview(df: pd.DataFrame, amt_col: str,
                    year_from: int, year_to: int,
-                   customer_name:  str  = "",
-                   account_id:     str  = "",
-                   lang:           str  = "en",
-                   reference_date       = None,
-                   remove_not_due: bool = False,
-                   month_from:     int  = 1,
-                   month_to:       int  = 12) -> BytesIO:
-
-    years = list(range(year_from, year_to + 1))
-
-    # Apply "remove not yet due" filter based on reference date
+                   customer_name: str = "",
+                   account_id:    str = "",
+                   lang:          str = "en",
+                   remove_overdues: bool = False) -> BytesIO:
+    """
+    Multi-year overview — same flat format as build_current_overview but grouped by year.
+    Each year has a dark-blue banner + column headers, then flat rows, then a year total.
+    Grand total at bottom. Yellow rows for zero-netting groups.
+    """
     import datetime as _dt
-    if reference_date is None:
-        reference_date = _dt.date.today()
-    ref_ts    = pd.Timestamp(reference_date)
-    today_str = ref_ts.strftime("%d/%m/%Y")
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
 
-    if remove_not_due:
-        net_due_col_filt = next((c for c in df.columns
-                                 if "net due" in c.lower()
-                                 or "vervaldatum" in c.lower()), None)
-        if net_due_col_filt and net_due_col_filt in df.columns:
-            due = pd.to_datetime(df[net_due_col_filt], errors="coerce")
-            df  = df[due.isna() | (due <= ref_ts)].copy()
+    # ── Colours (same as build_current_overview) ──────────────────────────────
+    HDR_FILL  = "FF1F3864"
+    BAND_FILL = "FF2E75B6"
+    ROW_WHITE = "FFFFFFFF"
+    ROW_BLUE  = "FFEBF3FB"
+    ROW_YELL  = "FFFFFF00"
+    COL_POS   = "FFC00000"
+    COL_NEG   = "FF375623"
+    COL_WHT   = "FFFFFFFF"
+    COL_BLK   = "FF000000"
 
-    # Apply month range filter (single mode only — month_from/month_to set)
-    if month_from != 1 or month_to != 12:
-        net_due_col_filt2 = next((c for c in df.columns
-                                  if "net due" in c.lower()
-                                  or "vervaldatum" in c.lower()), None)
-        if net_due_col_filt2 and net_due_col_filt2 in df.columns:
-            due2 = pd.to_datetime(df[net_due_col_filt2], errors="coerce")
-            df   = df[due2.isna() |
-                      ((due2.dt.month >= month_from) & (due2.dt.month <= month_to))].copy()
+    def _fill(rgb): return PatternFill("solid", fgColor=rgb)
+    def _font(bold=False, color=COL_BLK, size=9):
+        return Font(name="Arial", bold=bold, color=color, size=size)
+    def _thin():
+        s = Side(style="thin", color="DDDDDD")
+        return Border(left=s, right=s, top=s, bottom=s)
+    def _aln(h="left"):
+        return Alignment(horizontal=h, vertical="center", wrap_text=False)
 
-    # Key column names
-    doc_date_col = next((c for c in df.columns if "document date" in c.lower()
-                         or "belegdatum" in c.lower()), None)
-    doc_type_col = next((c for c in df.columns if "document type" in c.lower()
-                         or "belegtyp"   in c.lower()), None)
-    pay_meth_col = next((c for c in df.columns if "payment method" in c.lower()), None)
-    gl_col       = next((c for c in df.columns if "g/l account" in c.lower()
-                         or "sachkonto" in c.lower()), None)
-
-    # Display columns: strip unwanted, replace Document Type with __DESC__
-    kept = [c for c in df.columns if c not in STRIP_COLS]
-    display_cols = []
-    for c in kept:
-        display_cols.append("__DESC__" if c == doc_type_col else c)
+    # ── Columns ───────────────────────────────────────────────────────────────
+    STRIP = {
+        "Reason code","Clerk Abbreviation","Cleared/open items symbol",
+        "Disputed item","Payment Block","Net due date symbol",
+        "Text","Clearing date","Clearing Document","Dunning Level",
+        "Last Dunned","Reversed with","Document Header Text","User Name",
+        "Special G/L ind.","Billing Document","Reference Key 1",
+        "doc_number_str","ref","sap_class","is_open","header_text",
+        "clearing_date","clearing_doc","text",
+    }
+    display_cols = [c for c in df.columns if c not in STRIP]
     ncols = len(display_cols)
+    col_widths = {
+        "Account":10,"Assignment":14,"Document Number":18,
+        "Reference Key 3":14,"Document Date":13,"Net due date":13,
+        "Document Type":13,"Amount in local currency":20,
+        "Arrears after net due date":24,"Payment Method":13,
+        "G/L Account":18,"Case ID":10,"Status":10,
+        "Dunning Block":13,"Disputed item":13,
+    }
+    amt_ci = (display_cols.index(amt_col)+1) if amt_col and amt_col in display_cols else None
 
-    # Which kept columns are dates
-    date_cols = {c for c in kept
-                 if any(kw in c.lower() for kw in ["date","datum"])
-                 or (c in df.columns and pd.api.types.is_datetime64_any_dtype(df[c]))}
-    amt_ci = (display_cols.index(amt_col) + 1) if amt_col and amt_col in display_cols else None
-    desc_name = _t(lang, "desc_col")
+    # ── Filters ───────────────────────────────────────────────────────────────
+    ndd_col = next((c for c in df.columns if "net due" in c.lower()), None)
+    arr_col = next((c for c in df.columns if "arrears" in c.lower()), None)
+    doc_type_col = next((c for c in df.columns if "document type" in c.lower()), None)
+    doc_date_col = next((c for c in df.columns if c.lower() == "document date"), None)
+    acc_col = next((c for c in df.columns if c.lower() in ("account","konto","debitor")), None)
 
-    # Parse all groups
+    if ndd_col:
+        df[ndd_col] = pd.to_datetime(df[ndd_col], errors="coerce")
+    if doc_date_col:
+        df[doc_date_col] = pd.to_datetime(df[doc_date_col], errors="coerce")
+    if amt_col:
+        df[amt_col] = pd.to_numeric(df[amt_col], errors="coerce")
+    if arr_col:
+        df[arr_col] = pd.to_numeric(df[arr_col], errors="coerce")
+
+    if remove_overdues and arr_col:
+        df = df[df[arr_col].fillna(0) <= 0].copy()
+
+    # ── Parse groups and assign years ─────────────────────────────────────────
     all_groups = _parse_groups(df, amt_col)
 
-    if year_from == year_to:
-        # Single mode: show ALL groups flat — no year filtering at all
-        by_year = {year_to: list(all_groups)}
-        years   = [year_to]
-    else:
-        # Assign year to each group
-        by_year = {yr: [] for yr in years}
-        for grp in all_groups:
-            yr = _group_year(grp, doc_date_col, doc_type_col, amt_col)
-            if yr is not None and year_from <= yr <= year_to:
-                by_year[yr].append(grp)
+    SKIP = {"AB", "ZP", "DZ"}
+    by_year = {yr: [] for yr in range(year_from, year_to + 1)}
+    for grp in all_groups:
+        yr = _group_year(grp, doc_date_col, doc_type_col, amt_col)
+        if yr is not None and year_from <= yr <= year_to:
+            by_year[yr].append(grp)
 
-    # Sort groups within each year
-    net_due_col_sort = next((c for c in df.columns
-                             if "net due" in c.lower()
-                             or "vervaldatum" in c.lower()), None)
-    arrears_col_sort = next((c for c in df.columns
-                             if "arrears" in c.lower()), None)
-    ref_ts_sort = pd.Timestamp(reference_date) if reference_date else pd.Timestamp.now()
-    _single_sort = (year_from == year_to)
-
-    def _grp_max_arrears(grp, _arr=arrears_col_sort):
-        vals = []
-        for row in grp:
-            v = row.get(_arr)
-            if v is not None and pd.notna(v):
-                try: vals.append(float(v))
-                except: pass
-        return max(vals) if vals else 0
-
-    def _grp_oldest_due(grp, _nd=net_due_col_sort):
-        SKIP = {"AB","ZP","DZ"}
+    # Sort each year: newest net due date first
+    def _oldest_due(grp):
         dates = []
         for row in grp:
             dt = str(row.get(doc_type_col,"") or "").strip().upper() if doc_type_col else ""
-            nd = row.get(_nd) if _nd else None
+            nd = row.get(ndd_col) if ndd_col else None
             if nd is not None and pd.notna(nd) and dt not in SKIP:
                 dates.append(pd.Timestamp(nd))
-        return min(dates) if dates else pd.Timestamp.max
+        return min(dates) if dates else pd.Timestamp.min
 
-    def grp_sort_key(grp):
-        oldest  = _grp_oldest_due(grp)
-        max_arr = _grp_max_arrears(grp)
-        if _single_sort:
-            is_overdue = oldest <= ref_ts_sort
-            if is_overdue:
-                # Most overdue (highest arrears) at top → sort by -arrears ascending
-                return (0, -int(max_arr))
-            else:
-                # Not yet due: most recent due date first → sort by due date ascending
-                # (smallest future date = soonest = first)
-                return (1, int(oldest.timestamp()))
-        else:
-            ts = oldest.timestamp() if oldest != pd.Timestamp.max else 0
-            return (0, -int(ts))
+    for yr in by_year:
+        by_year[yr].sort(key=lambda g: -int(_oldest_due(g).timestamp()))
 
-    for yr in years:
-        by_year[yr].sort(key=grp_sort_key)
-
-    # ── Workbook ──────────────────────────────────────────────────────────────
+    # ── Build workbook ────────────────────────────────────────────────────────
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Overview"
 
-    # Column widths
     for ci, col in enumerate(display_cols, 1):
-        if col == "__DESC__":
-            ws.column_dimensions[get_column_letter(ci)].width = 26
-        elif col in date_cols:
-            ws.column_dimensions[get_column_letter(ci)].width = 13
-        elif amt_col and col == amt_col:
-            ws.column_dimensions[get_column_letter(ci)].width = 18
-        else:
-            samp = df[col].astype(str) if col in df.columns else pd.Series([""])
-            w    = max(len(col), samp.str.len().max() if len(samp) else 0)
-            ws.column_dimensions[get_column_letter(ci)].width = min(max(w + 2, 9), 28)
+        ws.column_dimensions[get_column_letter(ci)].width = col_widths.get(col, max(len(col)+2,12))
 
-    # ── Title rows ────────────────────────────────────────────────────────────
     r = 1
-    if year_from == year_to:
-        title = "  ·  ".join(filter(None, [
-            customer_name,
-            f"Account {account_id}" if account_id else "",
-            _t(lang, "title_suffix"),
-        ]))
-    else:
-        title = "  ·  ".join(filter(None, [
-            customer_name,
-            f"Account {account_id}" if account_id else "",
-            f"{year_from}–{year_to}  {_t(lang,'title_suffix')}",
-        ]))
-    _mw(ws, r, 1, ncols, title, bold=True, bg=DK_BLUE, fg=WHITE, size=14)
-    ws.row_dimensions[r].height = 34; r += 1
-    sub_extra = f"  ·  {today_str}" + ("  ·  Invoices not yet due removed" if remove_not_due else "")
-    _mw(ws, r, 1, ncols, _t(lang, "subtitle") + sub_extra, bg=MD_BLUE, fg=WHITE, size=9)
-    ws.row_dimensions[r].height = 16; r += 2
-
-    # ── Helpers ───────────────────────────────────────────────────────────────
-    def col_headers(bg):
-        nonlocal r
-        for ci, col in enumerate(display_cols, 1):
-            hdr = desc_name if col == "__DESC__" else col
-            c   = ws.cell(row=r, column=ci, value=hdr)
-            c.font = _font(bold=True, color=WHITE, size=9)
-            c.fill = _fill(bg); c.alignment = _align("center"); c.border = _thin()
-        ws.row_dimensions[r].height = 15; r += 1
-
-    def data_row(row_data, bg):
-        nonlocal r
-        for ci, col in enumerate(display_cols, 1):
-            is_amt  = (ci == amt_ci)
-            is_date = (col in date_cols)
-            is_desc = (col == "__DESC__")
-
-            if is_desc:
-                val = _desc(
-                    row_data.get(doc_type_col, "") if doc_type_col else "",
-                    row_data.get(amt_col, 0)       if amt_col else 0,
-                    row_data.get(pay_meth_col, "")  if pay_meth_col else "",
-                    lang,
-                )
-                fg = BLACK_FG
-            elif col not in row_data.index:
-                val, fg = "", BLACK_FG
-            elif is_amt:
-                val = float(row_data[col]) if pd.notna(row_data[col]) else 0.0
-                fg  = POS_FG if val >= 0 else NEG_FG
-            elif is_date:
-                try:
-                    val = (pd.Timestamp(row_data[col]).to_pydatetime()
-                           if pd.notna(row_data[col]) else "")
-                except Exception:
-                    val = str(row_data[col]) if pd.notna(row_data[col]) else ""
-                fg = BLACK_FG
-            elif pd.isna(row_data[col]):
-                val, fg = "", BLACK_FG
-            elif gl_col and col == gl_col:
-                raw = str(row_data[col]).strip().split(".")[0]
-                lbl = _gl_lbl(raw, lang)
-                val, fg = (f"{raw} — {lbl}" if lbl else raw), BLACK_FG
-            elif isinstance(row_data[col], float) and row_data[col] == int(row_data[col]):
-                val, fg = int(row_data[col]), BLACK_FG
-            else:
-                val, fg = row_data[col], BLACK_FG
-
-            cell = ws.cell(row=r, column=ci, value=val)
-            cell.font      = _font(color=fg, size=9)
-            cell.fill      = _fill(bg)
-            cell.alignment = _align("right" if is_amt else "left")
-            cell.border    = _thin()
-            if is_amt:
-                cell.number_format = "#,##0.00"
-            elif is_date and isinstance(val, datetime.datetime):
-                cell.number_format = "DD/MM/YYYY"
-        ws.row_dimensions[r].height = 13; r += 1
-
-    def subtotal_row(label, total, bg, fg_label=WHITE, size=9):
-        nonlocal r
-        for ci in range(1, ncols + 1):
-            if ci == 1:
-                _w(ws, r, ci, label, bold=True, bg=bg, fg=fg_label, size=size)
-            elif ci == amt_ci:
-                c2 = ws.cell(row=r, column=ci, value=total)
-                c2.font = _font(bold=True, color=WHITE, size=size)
-                c2.fill = _fill(bg); c2.alignment = _align("right")
-                c2.number_format = "#,##0.00"; c2.border = _thin()
-            else:
-                ws.cell(row=r, column=ci).fill   = _fill(bg)
-                ws.cell(row=r, column=ci).border = _thin()
-        ws.row_dimensions[r].height = 14; r += 1
-
-    # ── Year sections ─────────────────────────────────────────────────────────
+    row_idx = 0
     grand_total = 0.0
 
-    for yr in years:
-        yr_groups = by_year[yr]
-        all_rows  = [row for g in yr_groups for row in g]
-        if all_rows:
-            amts    = [float(rw.get(amt_col, 0) or 0) for rw in all_rows if amt_col]
-            yr_inv  = sum(a for a in amts if a > 0)
-            yr_cred = sum(a for a in amts if a < 0)
-            yr_net  = sum(amts)
-        else:
-            yr_inv = yr_cred = yr_net = 0.0
-        grand_total += yr_net
+    for yr in sorted(by_year.keys()):
+        groups = by_year[yr]
+        if not groups:
+            continue
 
-        # Year banner — skip in single mode (title row already has customer info)
-        if year_from != year_to:
-            _mw(ws, r, 1, ncols,
-                _t(lang, "year_banner", yr=yr, n=len(yr_groups),
-                   inv=f"{yr_inv:,.2f}", cred=f"{yr_cred:,.2f}", net=f"{yr_net:,.2f}"),
-                bold=True, bg=DK_BLUE, fg=WHITE, size=11)
-            ws.row_dimensions[r].height = 22; r += 1
+        yr_total = sum(
+            float(row.get(amt_col,0) or 0)
+            for grp in groups for row in grp
+            if amt_col and pd.notna(row.get(amt_col))
+        )
+        grand_total += yr_total
 
-        if not yr_groups:
-            _mw(ws, r, 1, ncols, _t(lang, "no_transactions", yr=yr),
-                bg=GREY, fg=BLACK_FG, size=9)
-            ws.row_dimensions[r].height = 16; r += 2; continue
+        # Year banner
+        for ci in range(1, ncols+1):
+            cell = ws.cell(r, ci)
+            cell.fill = _fill(HDR_FILL)
+            cell.border = _thin()
+            if ci == 1:
+                cell.value = f"{yr}  ·  {len(groups)} group(s)"
+                cell.font = _font(bold=True, color=COL_WHT, size=11)
+                cell.alignment = _aln("left")
+        ws.row_dimensions[r].height = 22
+        r += 1
 
-        # Determine G/L sub-sections for this year
-        if gl_col and gl_col in df.columns:
-            gl_raw    = [str(rw.get(gl_col,"") or "").strip().split(".")[0]
-                         for g in yr_groups for rw in g]
-            known     = [g for g in ["2400000","2530009"] if g in gl_raw]
-            others    = sorted({g for g in gl_raw
-                                if g not in known and g not in ("","nan","None")})
-            has_blank = any(g in ("","nan","None") for g in gl_raw)
-            gl_sections = known + others + ([""] if has_blank else [])
-            multi_gl    = len([g for g in gl_sections if g]) > 1
-        else:
-            gl_sections, multi_gl = [None], False
+        # Column headers
+        for ci, h in enumerate(display_cols, 1):
+            cell = ws.cell(r, ci, value=h)
+            cell.font = _font(bold=True, color=COL_WHT, size=9)
+            cell.fill = _fill(BAND_FILL)
+            cell.alignment = _aln("center")
+            cell.border = _thin()
+        ws.row_dimensions[r].height = 15
+        r += 1
 
-        for gl_key in gl_sections:
-            # Filter groups to this GL section
-            if gl_key is None:
-                sec_groups = yr_groups
-            else:
-                sec_groups = []
-                for grp in yr_groups:
-                    if gl_key == "":
-                        filtered = [rw for rw in grp
-                                    if gl_col and str(rw.get(gl_col,"") or "").strip()
-                                    .split(".")[0] in ("","nan","None")]
+        # Data rows
+        for grp in groups:
+            grp_total = sum(
+                float(row.get(amt_col,0) or 0)
+                for row in grp if amt_col and pd.notna(row.get(amt_col))
+            )
+            for row in grp:
+                bg = ROW_WHITE if row_idx % 2 == 0 else ROW_BLUE
+                for ci, col in enumerate(display_cols, 1):
+                    val = row.get(col, "")
+                    if isinstance(val, pd.Timestamp):
+                        val = val.to_pydatetime()
+                    elif not isinstance(val, (str, int, float, _dt.datetime, type(None))):
+                        val = str(val)
+                    elif isinstance(val, float):
+                        if val != val: val = None
+                        elif val == int(val): val = int(val)
+                    is_amt = amt_col and col == amt_col
+                    cell = ws.cell(r, ci, value=val if val != "" else None)
+                    if is_amt and isinstance(val, (int,float)) and val is not None:
+                        cell.font = _font(color=COL_POS if val>0 else (COL_NEG if val<0 else COL_BLK))
+                        cell.number_format = "#,##0.00"
+                        cell.alignment = _aln("right")
+                    elif isinstance(val, _dt.datetime):
+                        cell.font = _font()
+                        cell.number_format = "DD/MM/YYYY"
+                        cell.alignment = _aln("left")
                     else:
-                        filtered = [rw for rw in grp
-                                    if gl_col and str(rw.get(gl_col,"") or "").strip()
-                                    .split(".")[0] == gl_key]
-                    if filtered:
-                        sec_groups.append(filtered)
+                        cell.font = _font()
+                        cell.alignment = _aln("left")
+                    cell.fill = _fill(bg)
+                    cell.border = _thin()
+                ws.row_dimensions[r].height = 13
+                r += 1
+                row_idx += 1
 
-            if not sec_groups:
-                continue
+            # Yellow row for zero-netting groups
+            if abs(grp_total) < 0.02:
+                for ci in range(1, ncols+1):
+                    cell = ws.cell(r, ci)
+                    cell.fill = _fill(ROW_YELL)
+                    cell.border = _thin()
+                    if ci == amt_ci:
+                        cell.value = 0
+                        cell.font = _font(bold=True)
+                        cell.number_format = "#,##0.00"
+                        cell.alignment = _aln("right")
+                ws.row_dimensions[r].height = 8
+                r += 1
+                row_idx += 1
 
-            sec_amts  = [float(rw.get(amt_col,0) or 0)
-                         for g in sec_groups for rw in g if amt_col]
-            sec_total = sum(sec_amts)
+        # Year total row
+        for ci in range(1, ncols+1):
+            cell = ws.cell(r, ci)
+            cell.fill = _fill(BAND_FILL)
+            cell.border = _thin()
+            if ci == 1:
+                cell.value = f"{yr} — Total"
+                cell.font = _font(bold=True, color=COL_WHT, size=10)
+                cell.alignment = _aln("left")
+            elif ci == amt_ci:
+                cell.value = yr_total
+                cell.font = _font(bold=True, color=COL_WHT, size=10)
+                cell.number_format = "#,##0.00"
+                cell.alignment = _aln("right")
+        ws.row_dimensions[r].height = 18
+        r += 1
 
-            # G/L sub-header
-            if multi_gl:
-                if gl_key in ("","nan","None",""):
-                    gl_title = _t(lang, "gl_other")
-                else:
-                    lbl      = _gl_lbl(gl_key, lang)
-                    gl_title = f"{gl_key} — {lbl}" if lbl else gl_key
-                _mw(ws, r, 1, ncols, f"  {gl_title}",
-                    bold=True, bg=LT_BLUE, fg=DK_BLUE, size=9, ha="left")
-                ws.row_dimensions[r].height = 14; r += 1
+        # Small gap between years
+        ws.row_dimensions[r].height = 6
+        r += 1
 
-            # Column headers (once per GL section)
-            col_headers(MD_BLUE)
-
-            # Each group
-            for grp in sec_groups:
-                grp_total = sum(float(rw.get(amt_col,0) or 0)
-                                for rw in grp if amt_col)
-                for ri, row_data in enumerate(grp):
-                    data_row(row_data, GREY if ri % 2 == 0 else WHITE)
-
-                # Group subtotal
-                subtotal_row(_t(lang, "group_subtotal"), grp_total, MD_BLUE)
-
-                # Blank gap between groups
-                ws.row_dimensions[r].height = 5; r += 1
-
-            # No G/L subtotals — groups already have their own subtotals
-
-        # Year total
-        subtotal_row(_t(lang, "year_total", yr="" if year_from == year_to else yr).strip(" —"),
-                     yr_net, DK_BLUE, size=10)
-
-        # Gap between years
-        ws.row_dimensions[r].height = 10; r += 1
-        ws.row_dimensions[r].height = 10; r += 1
-
-    # ── Grand total ───────────────────────────────────────────────────────────
-    _mw(ws, r, 1, ncols,
-        _t(lang, "grand_total", a=year_from, b=year_to),
-        bold=True, bg=DK_BLUE, fg=WHITE, size=12)
-    ws.row_dimensions[r].height = 28; r += 1
-
-    for ci in range(1, ncols + 1):
+    # Grand total
+    for ci in range(1, ncols+1):
+        cell = ws.cell(r, ci)
+        cell.fill = _fill(HDR_FILL)
+        cell.border = _thin()
         if ci == 1:
-            _w(ws, r, ci, _t(lang, "net_balance"),
-               bold=True, bg=DK_BLUE, fg=WHITE, size=11)
+            cell.value = "Net Balance"
+            cell.font = _font(bold=True, color=COL_WHT, size=11)
+            cell.alignment = _aln("left")
         elif ci == amt_ci:
-            c2 = ws.cell(row=r, column=ci, value=grand_total)
-            c2.font = _font(bold=True, color=WHITE, size=13)
-            c2.fill = _fill(DK_BLUE); c2.alignment = _align("right")
-            c2.number_format = "#,##0.00"; c2.border = _thin()
-        else:
-            ws.cell(row=r, column=ci).fill   = _fill(DK_BLUE)
-            ws.cell(row=r, column=ci).border = _thin()
-    ws.row_dimensions[r].height = 26
-    ws.freeze_panes = "A4"
-
+            cell.value = grand_total
+            cell.font = _font(bold=True, color=COL_WHT, size=12)
+            cell.number_format = "#,##0.00"
+            cell.alignment = _aln("right")
+    ws.row_dimensions[r].height = 22
+    ws.freeze_panes = "A2"
 
     out = BytesIO()
     wb.save(out); out.seek(0)

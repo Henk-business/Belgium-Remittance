@@ -133,7 +133,7 @@ def show():
                     'July','August','September','October','November','December']
 
     if single_mode:
-        sc1, sc2, sc3 = st.columns(3)
+        sc1, sc2 = st.columns(2)
         with sc1:
             ref_date = st.date_input(
                 "Reference date", value=datetime.date.today(),
@@ -144,12 +144,9 @@ def show():
             remove_not_due = st.checkbox(
                 "Remove not yet due", value=True, key="ov_remove_nd",
             )
-        with sc3:
-            remove_overdues = st.checkbox(
-                "Remove current overdues", value=False, key="ov_remove_ov",
-                help="Remove rows where arrears > 0 (invoices already past due date)",
-            )
+        remove_overdues = False
         year_from = year_to = yr_max
+        month_from, month_to = 1, 12
 
         mc0, mc1, mc2, _ = st.columns([1, 1, 1, 1])
         with mc0:
@@ -175,21 +172,23 @@ def show():
     else:
         ref_date       = datetime.date.today()
         remove_not_due = False
-        remove_overdues = False
         month_from, month_to = 1, 12
 
-        mc1, mc2 = st.columns(2)
+        mc1, mc2, mc3 = st.columns(3)
         with mc1:
             year_from = st.number_input(
                 "From year", min_value=2000, max_value=2099,
                 value=yr_min, step=1, key="ov_from_input",
-                help="Start year for multi-year overview",
             )
         with mc2:
             year_to = st.number_input(
                 "To year", min_value=2000, max_value=2099,
                 value=yr_max, step=1, key="ov_to_input",
-                help="End year for multi-year overview",
+            )
+        with mc3:
+            remove_overdues = st.checkbox(
+                "Remove current overdues", value=False, key="ov_remove_ov",
+                help="Remove rows where arrears > 0 (past due date)",
             )
 
     year_from = int(year_from)
@@ -266,6 +265,7 @@ def show():
                         customer_name=customer_name.strip(),
                         account_id=(account_filter if account_filter != "All accounts" else ""),
                         lang=lang,
+                        remove_overdues=remove_overdues,
                     )
                 st.session_state["ov_result"]      = result
                 st.session_state["ov_acc"]         = account_filter
