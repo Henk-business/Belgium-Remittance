@@ -303,21 +303,32 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
     if amt_col: df[amt_col] = pd.to_numeric(df[amt_col],  errors="coerce")
     if arr_col: df[arr_col] = pd.to_numeric(df[arr_col],  errors="coerce")
 
-    # ── Isolate current-open rows (everything before the first DZ/ZP row) ─────
-    # This is the same detection used in build_overview.
-    PAY_TYPES = {"DZ", "ZP"}
-    first_pay_index = None
-    if doc_type_col:
-        for idx, row in df.iterrows():
-            if str(row.get(doc_type_col, "") or "").strip().upper() in PAY_TYPES:
-                first_pay_index = idx
-                break
+    # ── Determine export structure ────────────────────────────────────────────
+    # If blank rows only appear at the END of the file (SAP grand total rows),
+    # ALL real rows are current open items — no group-separator structure exists.
+    # If blank rows appear IN THE MIDDLE, the file has clearing groups and we
+    # must split at the first payment (DZ/ZP) row boundary.
+    if acc_col:
+        is_blank_mask = df[acc_col].isna() | df[acc_col].astype(str).str.strip().isin(["", "nan", "None"])
+        last_real_idx = df[~is_blank_mask].index.max() if (~is_blank_mask).any() else -1
+        blanks_in_middle = (is_blank_mask & (df.index < last_real_idx)).any()
+    else:
+        blanks_in_middle = False
 
-    if first_pay_index is not None:
-        df = df[df.index < first_pay_index].copy()
-    # else: entire df is open items (no clearing rows found)
+    if blanks_in_middle:
+        # Multi-group export: open items are everything before the first DZ/ZP row
+        PAY_TYPES = {"DZ", "ZP"}
+        first_pay_index = None
+        if doc_type_col:
+            for idx, row in df.iterrows():
+                if str(row.get(doc_type_col, "") or "").strip().upper() in PAY_TYPES:
+                    first_pay_index = idx
+                    break
+        if first_pay_index is not None:
+            df = df[df.index < first_pay_index].copy()
+    # else: no mid-file blank rows → entire file is current open items, use as-is
 
-    # Strip blank separator rows — not needed for flat display
+    # Strip blank/SAP-total rows — keep only real account rows
     if acc_col:
         is_real = df[acc_col].notna() & ~df[acc_col].astype(str).str.strip().isin(["", "nan", "None"])
         df = df[is_real].copy()
@@ -569,42 +580,43 @@ def build_overview(df: pd.DataFrame, amt_col: str,
         groups_raw.append(cur)
 
     # ── Split: current-open groups vs historical ──────────────────────────────
-    # SAP exports place current open items first, followed by cleared/historical
-    # groups each terminated by a DZ or ZP payment row.
-    # Detection strategy: a group is "historical" (cleared) when it contains at
-    # least one DZ or ZP row (actual payment documents). AB rows appear in BOTH
-    # open and historical sections so cannot be used as the discriminator.
-    # We scan from the end of groups_raw backwards: the first group (from the
-    # front) that has NO DZ/ZP row and whose dataframe indices all fall before
-    # the first DZ/ZP row in the entire file is the open-items block.
-    # Simpler and robust: find the minimum dataframe index of any DZ or ZP row.
-    # Every group whose rows all sit before that index is current-open.
+    # Detect whether the export has a group-separator structure (blank rows in
+    # the middle) or is a flat open-items export (blank rows only at the end).
+    if acc_col:
+        is_blank_all = df[acc_col].isna() | df[acc_col].astype(str).str.strip().isin(["", "nan", "None"])
+        last_real = df[~is_blank_all].index.max() if (~is_blank_all).any() else -1
+        blanks_in_middle = (is_blank_all & (df.index < last_real)).any()
+    else:
+        blanks_in_middle = False
+
     PAY_TYPES = {"DZ", "ZP"}
 
-    # Find the first (lowest) dataframe index that has a DZ or ZP doc type
-    first_pay_index = None
-    if doc_type_col:
-        for idx, row in df.iterrows():
-            dt = str(row.get(doc_type_col, "") or "").strip().upper()
-            if dt in PAY_TYPES:
-                first_pay_index = idx
-                break
-
-    if first_pay_index is None:
-        # No payment rows at all — everything is current open
+    if not blanks_in_middle:
+        # Flat open-items export — all rows are current open, no historical groups
         current_open_groups = [[r for _, r in grp] for grp in groups_raw]
         historical_groups   = []
     else:
-        # Groups whose maximum row index falls before the first payment row
-        # are current-open; everything else is historical
-        current_open_groups = []
-        historical_groups   = []
-        for grp in groups_raw:
-            max_idx = max(i for i, _ in grp)
-            if max_idx < first_pay_index:
-                current_open_groups.append([r for _, r in grp])
-            else:
-                historical_groups.append([r for _, r in grp])
+        # Find the minimum dataframe index of any DZ or ZP row
+        first_pay_index = None
+        if doc_type_col:
+            for idx, row in df.iterrows():
+                dt = str(row.get(doc_type_col, "") or "").strip().upper()
+                if dt in PAY_TYPES:
+                    first_pay_index = idx
+                    break
+
+        if first_pay_index is None:
+            current_open_groups = [[r for _, r in grp] for grp in groups_raw]
+            historical_groups   = []
+        else:
+            current_open_groups = []
+            historical_groups   = []
+            for grp in groups_raw:
+                max_idx = max(i for i, _ in grp)
+                if max_idx < first_pay_index:
+                    current_open_groups.append([r for _, r in grp])
+                else:
+                    historical_groups.append([r for _, r in grp])
 
     # ── Bucket historical groups by year ──────────────────────────────────────
     SKIP_TYPES = {"AB", "ZP", "DZ"}
