@@ -278,21 +278,19 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
                             month_from: int = 1,
                             month_to: int = 12) -> BytesIO:
     """
-    Current overview — shows only the current year (year of reference_date).
-    - Filters to rows whose net due date falls in reference_date's year
-    - remove_not_due: hides rows not yet due as of reference_date
-    - remove_overdues: hides rows already overdue (arrears > 0)
-    - month_from/month_to: further narrows to a month range within that year
-    - Alternating white / light-grey rows
-    - Yellow row when a clearing group nets to zero
-    - Sorted newest net due date first
+    Current overview — shows ONLY the current open items section.
+    These are the rows that appear before the first DZ/ZP (payment) row
+    in the SAP export, i.e. the open/outstanding invoices.
+
+    remove_not_due: removes rows where net due date > reference_date (not yet due)
+    remove_overdues: removes rows where net due date < reference_date (already overdue)
+    month_from/month_to: filter by net due date month range
     """
     import datetime as _dt
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
     ref_ts  = pd.Timestamp(reference_date) if reference_date else pd.Timestamp.now()
-    ref_yr  = ref_ts.year
 
     ndd_col      = next((c for c in df.columns if "net due"       in c.lower()), None)
     arr_col      = next((c for c in df.columns if "arrears"       in c.lower()), None)
@@ -300,72 +298,58 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
     acc_col      = next((c for c in df.columns if c.lower() in ("account","konto","debitor")), None)
     pay_col      = next((c for c in df.columns if "payment method" in c.lower()), None)
 
-    # ── Parse types up front ──────────────────────────────────────────────────
     df = df.copy()
-    if ndd_col:      df[ndd_col] = pd.to_datetime(df[ndd_col], errors="coerce")
-    if amt_col:      df[amt_col] = pd.to_numeric(df[amt_col],  errors="coerce")
-    if arr_col:      df[arr_col] = pd.to_numeric(df[arr_col],  errors="coerce")
+    if ndd_col: df[ndd_col] = pd.to_datetime(df[ndd_col], errors="coerce")
+    if amt_col: df[amt_col] = pd.to_numeric(df[amt_col],  errors="coerce")
+    if arr_col: df[arr_col] = pd.to_numeric(df[arr_col],  errors="coerce")
 
-    # ── Step 1: recalculate arrears fresh against reference_date ─────────────
-    # Must happen BEFORE the overdue/not-due filters so they use accurate values
+    # ── Isolate current-open rows (everything before the first DZ/ZP row) ─────
+    # This is the same detection used in build_overview.
+    PAY_TYPES = {"DZ", "ZP"}
+    first_pay_index = None
+    if doc_type_col:
+        for idx, row in df.iterrows():
+            if str(row.get(doc_type_col, "") or "").strip().upper() in PAY_TYPES:
+                first_pay_index = idx
+                break
+
+    if first_pay_index is not None:
+        df = df[df.index < first_pay_index].copy()
+    # else: entire df is open items (no clearing rows found)
+
+    # Strip blank separator rows — not needed for flat display
+    if acc_col:
+        is_real = df[acc_col].notna() & ~df[acc_col].astype(str).str.strip().isin(["", "nan", "None"])
+        df = df[is_real].copy()
+
+    # ── Recalculate arrears against reference_date ────────────────────────────
     df = _recalc_arrears(df, ref_ts.date())
+    if arr_col: df[arr_col] = pd.to_numeric(df[arr_col], errors="coerce")
 
-    # ── Step 2: restrict to current year (net due date year == ref_yr) ───────
-    # Keep blank separator rows (acc is null) so group structure is preserved;
-    # they will be re-stripped during grouping.
-    if ndd_col:
-        due_yr = df[ndd_col].dt.year
-        is_blank = df[acc_col].isna() | df[acc_col].astype(str).str.strip().isin(["", "nan", "None"]) \
-                   if acc_col else pd.Series(False, index=df.index)
-        df = df[is_blank | (due_yr == ref_yr)].copy()
+    # ── remove_not_due: hide rows where net due date is AFTER reference date ──
+    # i.e. arrears < 0 (not yet overdue)
+    if remove_not_due and ndd_col:
+        due = df[ndd_col]
+        df = df[due.isna() | (due <= ref_ts)].copy()
 
-    # ── Step 3: month range filter ────────────────────────────────────────────
+    # ── remove_overdues: hide rows where net due date is BEFORE reference date
+    # i.e. arrears > 0 (already past due)
+    if remove_overdues and ndd_col:
+        due = df[ndd_col]
+        df = df[due.isna() | (due >= ref_ts)].copy()
+
+    # ── Month range filter ────────────────────────────────────────────────────
     if (month_from != 1 or month_to != 12) and ndd_col:
-        is_blank2 = df[acc_col].isna() | df[acc_col].astype(str).str.strip().isin(["", "nan", "None"]) \
-                    if acc_col else pd.Series(False, index=df.index)
         due_m = df[ndd_col].dt.month
-        df = df[is_blank2 | ((due_m >= month_from) & (due_m <= month_to))].copy()
+        df = df[due_m.isna() | ((due_m >= month_from) & (due_m <= month_to))].copy()
 
-    # ── Step 4: remove not-yet-due rows (arrears < 0 means not yet due) ──────
-    if remove_not_due and arr_col:
-        is_blank3 = df[acc_col].isna() | df[acc_col].astype(str).str.strip().isin(["", "nan", "None"]) \
-                    if acc_col else pd.Series(False, index=df.index)
-        arr = pd.to_numeric(df[arr_col], errors="coerce").fillna(0)
-        df = df[is_blank3 | (arr >= 0)].copy()
-
-    # ── Step 5: remove overdue rows (arrears > 0) ─────────────────────────────
-    if remove_overdues and arr_col:
-        is_blank4 = df[acc_col].isna() | df[acc_col].astype(str).str.strip().isin(["", "nan", "None"]) \
-                    if acc_col else pd.Series(False, index=df.index)
-        arr = pd.to_numeric(df[arr_col], errors="coerce").fillna(0)
-        df = df[is_blank4 | (arr <= 0)].copy()
-
-    # ── Split into clearing-doc groups (skip orphan blank rows) ──────────────
-    groups  = []
-    current = []
-    for _, row in df.iterrows():
-        acc = str(row.get(acc_col, "") or "").strip() if acc_col else ""
-        if acc and acc not in ("nan", "None", ""):
-            current.append(row)
-        else:
-            if current:
-                groups.append(current)
-                current = []
-    if current:
-        groups.append(current)
-
-    # ── Sort groups newest net due first ──────────────────────────────────────
+    # ── Group into clearing-doc groups using assignment/document grouping ──────
+    # For the flat current overview we treat rows as one big group — no SAP
+    # blank-row separators exist in the open-items section.
+    # Sort newest net due date first.
     SKIP = {"AB", "ZP", "DZ"}
-    def _oldest_due(grp):
-        dates = []
-        for row in grp:
-            dt = str(row.get(doc_type_col, "") or "").strip().upper() if doc_type_col else ""
-            nd = row.get(ndd_col) if ndd_col else None
-            if nd is not None and pd.notna(nd) and dt not in SKIP:
-                dates.append(pd.Timestamp(nd))
-        return min(dates) if dates else pd.Timestamp.min
-
-    groups.sort(key=lambda g: -int(_oldest_due(g).timestamp()))
+    if ndd_col:
+        df = df.sort_values(ndd_col, ascending=False, na_position="last")
 
     # ── Colours ───────────────────────────────────────────────────────────────
     HDR_FILL  = "FF1F3864"
@@ -386,7 +370,6 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
     def _aln(h="left"):
         return Alignment(horizontal=h, vertical="center", wrap_text=False)
 
-    # ── Columns to display ────────────────────────────────────────────────────
     STRIP = {
         "Reason code","Clerk Abbreviation","Cleared/open items symbol",
         "Disputed item","Payment Block","Net due date symbol",
@@ -398,7 +381,6 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
     }
     display_cols = [c for c in df.columns if c not in STRIP]
     ncols = len(display_cols)
-
     col_widths = {
         "Account":10,"Assignment":14,"Document Number":18,
         "Reference Key 3":14,"Document Date":13,"Net due date":13,
@@ -411,11 +393,10 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Overview"
-
     for ci, col in enumerate(display_cols, 1):
         ws.column_dimensions[get_column_letter(ci)].width = col_widths.get(col, max(len(str(col))+2, 12))
 
-    # Header row — translate Document Type column label
+    # Header row
     for ci, col in enumerate(display_cols, 1):
         h = "Description" if doc_type_col and col == doc_type_col else col
         cell = ws.cell(1, ci, value=h)
@@ -427,73 +408,42 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
     ws.freeze_panes = "A2"
 
     r = 2
-    row_idx = 0
+    amt_ci = (display_cols.index(amt_col) + 1) if amt_col and amt_col in display_cols else None
 
-    for grp in groups:
-        grp_total = sum(
-            float(row.get(amt_col, 0) or 0)
-            for row in grp if amt_col and pd.notna(row.get(amt_col))
-        )
-
-        for row in grp:
-            bg = ROW_WHITE if row_idx % 2 == 0 else ROW_BLUE
-            for ci, col in enumerate(display_cols, 1):
-                val = row.get(col, "")
-                # Translate Document Type codes to descriptions (always EN for current overview)
-                if doc_type_col and col == doc_type_col:
-                    pm  = row.get(pay_col, "") if pay_col else ""
-                    val = _desc(val, row.get(amt_col, 0), pm, "en")
-                elif isinstance(val, pd.Timestamp):
-                    val = val.to_pydatetime()
-                elif not isinstance(val, (str, int, float, _dt.datetime, type(None))):
-                    val = str(val)
-                elif isinstance(val, float):
-                    if val != val:
-                        val = None
-                    elif val == int(val):
-                        val = int(val)
-                is_amt = amt_col and col == amt_col
-                cell = ws.cell(r, ci, value=val if val != "" else None)
-                if is_amt and isinstance(val, (int, float)) and val is not None:
-                    cell.font = _font(color=COL_POS if val > 0 else (COL_NEG if val < 0 else COL_BLK))
-                    cell.number_format = "#,##0.00"
-                    cell.alignment = _aln("right")
-                elif isinstance(val, _dt.datetime):
-                    cell.font = _font()
-                    cell.number_format = "DD/MM/YYYY"
-                    cell.alignment = _aln("left")
-                else:
-                    cell.font = _font()
-                    cell.alignment = _aln("left")
-                cell.fill = _fill(bg)
-                cell.border = _thin()
-            ws.row_dimensions[r].height = 13
-            r += 1
-            row_idx += 1
-
-        # Yellow subtotal row when group nets to zero
-        if abs(grp_total) < 0.02:
-            amt_ci_local = (display_cols.index(amt_col) + 1) if amt_col and amt_col in display_cols else 8
-            for ci in range(1, ncols + 1):
-                cell = ws.cell(r, ci)
-                cell.fill = _fill(ROW_YELL)
-                cell.border = _thin()
-                if ci == amt_ci_local:
-                    cell.value = 0
-                    cell.font = _font(bold=True)
-                    cell.number_format = "#,##0.00"
-                    cell.alignment = _aln("right")
-            ws.row_dimensions[r].height = 8
-            r += 1
-            row_idx += 1
+    for row_idx, (_, row) in enumerate(df.iterrows()):
+        bg = ROW_WHITE if row_idx % 2 == 0 else ROW_BLUE
+        for ci, col in enumerate(display_cols, 1):
+            val = row.get(col, "")
+            if doc_type_col and col == doc_type_col:
+                pm  = row.get(pay_col, "") if pay_col else ""
+                val = _desc(val, row.get(amt_col, 0), pm, "en")
+            elif isinstance(val, pd.Timestamp):
+                val = val.to_pydatetime()
+            elif not isinstance(val, (str, int, float, _dt.datetime, type(None))):
+                val = str(val)
+            elif isinstance(val, float):
+                if val != val:   val = None
+                elif val == int(val): val = int(val)
+            is_amt = amt_col and col == amt_col
+            cell = ws.cell(r, ci, value=val if val != "" else None)
+            if is_amt and isinstance(val, (int, float)) and val is not None:
+                cell.font = _font(color=COL_POS if val > 0 else (COL_NEG if val < 0 else COL_BLK))
+                cell.number_format = "#,##0.00"
+                cell.alignment = _aln("right")
+            elif isinstance(val, _dt.datetime):
+                cell.font = _font()
+                cell.number_format = "DD/MM/YYYY"
+                cell.alignment = _aln("left")
+            else:
+                cell.font = _font()
+                cell.alignment = _aln("left")
+            cell.fill = _fill(bg)
+            cell.border = _thin()
+        ws.row_dimensions[r].height = 13
+        r += 1
 
     # ── Grand total row ───────────────────────────────────────────────────────
-    grand_total = sum(
-        float(row.get(amt_col, 0) or 0)
-        for grp in groups for row in grp
-        if amt_col and pd.notna(row.get(amt_col))
-    )
-    amt_ci = (display_cols.index(amt_col) + 1) if amt_col and amt_col in display_cols else None
+    grand_total = df[amt_col].sum() if amt_col and amt_col in df.columns else 0.0
     for ci in range(1, ncols + 1):
         cell = ws.cell(r, ci)
         cell.fill = _fill(HDR_FILL)
@@ -599,16 +549,11 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     if amt_col:      df[amt_col]      = pd.to_numeric( df[amt_col],      errors="coerce")
     if arr_col:      df[arr_col]      = pd.to_numeric( df[arr_col],      errors="coerce")
 
-    # Recalculate arrears to today (must happen BEFORE any overdue filter)
+    # Recalculate arrears to today (must happen before group parsing)
     df = _recalc_arrears(df, _dt.date.today())
-
-    # Remove overdue rows AFTER recalc — keep blank separator rows intact
-    if remove_overdues and arr_col:
-        df[arr_col] = pd.to_numeric(df[arr_col], errors="coerce")
-        is_blank = (df[acc_col].isna() | df[acc_col].astype(str).str.strip().isin(["","nan","None"])) \
-                   if acc_col else pd.Series(False, index=df.index)
-        arr = df[arr_col].fillna(0)
-        df = df[is_blank | (arr <= 0)].copy()
+    # NOTE: remove_overdues for multi-year ONLY suppresses the Current Open
+    # section — it does NOT filter rows from historical cleared years.
+    # Historical year rows always show in full so the reconciliation is visible.
     # ── Parse SAP groups using blank Account rows as separators ──────────────
     # Each group = list of (original_index, row) tuples
     groups_raw, cur = [], []
@@ -808,18 +753,18 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     # are by definition the outstanding/overdue items the user wants excluded.
     # ══════════════════════════════════════════════════════════════════════════
     if current_open_groups and not remove_overdues:
-        # Dark-blue banner
+        # Dark-blue banner — MERGED across all columns
         for ci in range(1, ncols+1):
-            cell = ws.cell(r, ci)
-            cell.fill   = _fill(HDR_FILL)
-            cell.border = _thin()
+            ws.cell(r, ci).fill   = _fill(HDR_FILL)
+            ws.cell(r, ci).border = _thin()
         _open_labels = {"en": "Current Open Items",
                         "nl": "Huidige Openstaande Posten",
                         "fr": "Postes Ouverts Actuels"}
         lbl = _open_labels.get(lang, "Current Open Items")
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=ncols)
         ws.cell(r, 1).value     = lbl
         ws.cell(r, 1).font      = _font(bold=True, color=COL_WHT, size=12)
-        ws.cell(r, 1).alignment = _aln("left")
+        ws.cell(r, 1).alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
         ws.row_dimensions[r].height = 22
         r += 1
 
@@ -865,7 +810,7 @@ def build_overview(df: pd.DataFrame, amt_col: str,
         )
         grand_total += yr_total
 
-        # Dark-blue year banner with stats
+        # Dark-blue year banner — MERGED across all columns
         yr_inv  = sum(float(row.get(amt_col,0) or 0)
                       for grp in groups for row in grp
                       if amt_col and pd.notna(row.get(amt_col)) and float(row.get(amt_col,0) or 0) > 0)
@@ -878,12 +823,12 @@ def build_overview(df: pd.DataFrame, amt_col: str,
                         cred=f"{yr_cred:,.2f}",
                         net=f"{yr_total:,.2f}")
         for ci in range(1, ncols+1):
-            cell = ws.cell(r, ci)
-            cell.fill   = _fill(HDR_FILL)
-            cell.border = _thin()
+            ws.cell(r, ci).fill   = _fill(HDR_FILL)
+            ws.cell(r, ci).border = _thin()
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=ncols)
         ws.cell(r, 1).value     = banner_val
         ws.cell(r, 1).font      = _font(bold=True, color=COL_WHT, size=11)
-        ws.cell(r, 1).alignment = _aln("center")
+        ws.cell(r, 1).alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
         ws.row_dimensions[r].height = 22
         r += 1
 
