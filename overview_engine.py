@@ -553,12 +553,13 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     col_widths = {
         "Account":10,"Assignment":14,"Document Number":18,
         "Reference Key 3":14,"Document Date":13,"Net due date":13,
-        "Document Type":13,"Amount in local currency":20,
+        "Document Type":26,"Amount in local currency":20,
         "Arrears after net due date":24,"Payment Method":13,
         "G/L Account":18,"Case ID":10,"Status":10,
         "Dunning Block":13,"Disputed item":13,
     }
     amt_ci = (display_cols.index(amt_col)+1) if amt_col and amt_col in display_cols else None
+    pay_col      = next((c for c in df.columns if "payment method" in c.lower()), None)
 
     ndd_col      = next((c for c in df.columns if "net due"       in c.lower()), None)
     arr_col      = next((c for c in df.columns if "arrears"       in c.lower()), None)
@@ -656,7 +657,11 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     def _write_data_row(ws, r, row, bg, amt_ci):
         for ci, col in enumerate(display_cols, 1):
             val = row.get(col, "")
-            if isinstance(val, pd.Timestamp):
+            # Translate Document Type codes → human-readable description
+            if doc_type_col and col == doc_type_col:
+                pm  = row.get(pay_col, "") if pay_col else ""
+                val = _desc(val, row.get(amt_col, 0), pm, lang)
+            elif isinstance(val, pd.Timestamp):
                 val = val.to_pydatetime()
             elif not isinstance(val, (str, int, float, _dt.datetime, type(None))):
                 val = str(val)
@@ -681,7 +686,9 @@ def build_overview(df: pd.DataFrame, amt_col: str,
         ws.row_dimensions[r].height = 13
 
     def _write_col_headers(ws, r):
-        for ci, h in enumerate(display_cols, 1):
+        for ci, col in enumerate(display_cols, 1):
+            # Rename Document Type column to translated description label
+            h = _t(lang, "desc_col") if doc_type_col and col == doc_type_col else col
             cell = ws.cell(r, ci, value=h)
             cell.font      = _font(bold=True, color=COL_WHT, size=9)
             cell.fill      = _fill(BAND_FILL)
@@ -727,6 +734,40 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     r = 1
     row_idx = 0
     grand_total = 0.0
+
+    # ── Row 1: Title (dark blue, size 14, bold, centred) ─────────────────────
+    acc_display = account_id or (
+        str(df[acc_col].dropna().iloc[0]).strip().split(".")[0]
+        if acc_col and len(df[acc_col].dropna()) > 0 else ""
+    )
+    yr_range = f"{year_from}–{year_to}" if year_from != year_to else str(year_from)
+    title_val = f"Account {acc_display}  ·  {yr_range}  {_t(lang, 'title_suffix')}"
+    for ci in range(1, ncols+1):
+        cell = ws.cell(r, ci)
+        cell.fill   = _fill(HDR_FILL)
+        cell.border = _thin()
+    ws.cell(r, 1).value     = title_val
+    ws.cell(r, 1).font      = _font(bold=True, color=COL_WHT, size=14)
+    ws.cell(r, 1).alignment = _aln("center")
+    ws.row_dimensions[r].height = 34
+    r += 1
+
+    # ── Row 2: Subtitle (mid blue, size 9, not bold) ──────────────────────────
+    today_str = _dt.date.today().strftime("%d/%m/%Y")
+    subtitle_val = f"{_t(lang, 'subtitle')}  ·  {today_str}"
+    for ci in range(1, ncols+1):
+        cell = ws.cell(r, ci)
+        cell.fill   = _fill(BAND_FILL)
+        cell.border = _thin()
+    ws.cell(r, 1).value     = subtitle_val
+    ws.cell(r, 1).font      = _font(bold=False, color=COL_WHT, size=9)
+    ws.cell(r, 1).alignment = _aln("center")
+    ws.row_dimensions[r].height = 16
+    r += 1
+
+    # ── Row 3: blank gap ─────────────────────────────────────────────────────
+    ws.row_dimensions[r].height = 6
+    r += 1
 
     # ══════════════════════════════════════════════════════════════════════════
     # SECTION 1 — CURRENT OPEN ITEMS
@@ -789,14 +830,25 @@ def build_overview(df: pd.DataFrame, amt_col: str,
         )
         grand_total += yr_total
 
-        # Dark-blue year banner
+        # Dark-blue year banner with stats
+        yr_inv  = sum(float(row.get(amt_col,0) or 0)
+                      for grp in groups for row in grp
+                      if amt_col and pd.notna(row.get(amt_col)) and float(row.get(amt_col,0) or 0) > 0)
+        yr_cred = sum(float(row.get(amt_col,0) or 0)
+                      for grp in groups for row in grp
+                      if amt_col and pd.notna(row.get(amt_col)) and float(row.get(amt_col,0) or 0) < 0)
+        banner_val = _t(lang, "year_banner",
+                        yr=yr, n=len(groups),
+                        inv=f"{yr_inv:,.2f}",
+                        cred=f"{yr_cred:,.2f}",
+                        net=f"{yr_total:,.2f}")
         for ci in range(1, ncols+1):
             cell = ws.cell(r, ci)
             cell.fill   = _fill(HDR_FILL)
             cell.border = _thin()
-        ws.cell(r, 1).value     = str(yr)
-        ws.cell(r, 1).font      = _font(bold=True, color=COL_WHT, size=12)
-        ws.cell(r, 1).alignment = _aln("left")
+        ws.cell(r, 1).value     = banner_val
+        ws.cell(r, 1).font      = _font(bold=True, color=COL_WHT, size=11)
+        ws.cell(r, 1).alignment = _aln("center")
         ws.row_dimensions[r].height = 22
         r += 1
 
@@ -843,7 +895,7 @@ def build_overview(df: pd.DataFrame, amt_col: str,
         ws.cell(r, amt_ci).number_format = "#,##0.00"
         ws.cell(r, amt_ci).alignment     = _aln("right")
     ws.row_dimensions[r].height = 22
-    ws.freeze_panes = "A2"
+    ws.freeze_panes = "A4"
 
     out = BytesIO()
     wb.save(out); out.seek(0)
