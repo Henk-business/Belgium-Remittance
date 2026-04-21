@@ -349,7 +349,7 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
     # ── Colours ───────────────────────────────────────────────────────────────
     HDR_FILL  = "FF1F3864"   # dark blue header
     ROW_WHITE = "FFFFFFFF"
-    ROW_BLUE  = "FFEBF3FB"   # light blue alternate
+    ROW_BLUE  = "FFF2F2F2"   # light grey alternate
     ROW_YELL  = "FFFFFF00"   # yellow subtotal
     COL_POS   = "FFC00000"   # red = positive amount
     COL_NEG   = "FF375623"   # green = negative amount
@@ -508,10 +508,10 @@ def build_overview(df: pd.DataFrame, amt_col: str,
          mid-blue year total.
       3. Net Balance grand total (dark blue).
 
-    Colours match build_current_overview exactly:
+    Colours match the AR Suite reference style:
       - Dark navy  #1F3864 — year banners, grand total
       - Mid blue   #2E75B6 — column headers, year totals, open total
-      - White      #FFFFFF / Light blue #EBF3FB — alternating data rows
+      - White      #FFFFFF / Light grey #F2F2F2 — alternating data rows
       - Yellow     #FFFF00 — zero-netting group separator rows
       - Red        #C00000 — positive amounts (invoices)
       - Green      #375623 — negative amounts (credits / payments)
@@ -523,7 +523,7 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     HDR_FILL  = "FF1F3864"   # dark blue  — year banner + grand total
     BAND_FILL = "FF2E75B6"   # mid blue   — column headers + year/open totals
     ROW_WHITE = "FFFFFFFF"   # plain white — data rows (incl. current open)
-    ROW_BLUE  = "FFEBF3FB"   # light blue  — alternating data rows
+    ROW_BLUE  = "FFF2F2F2"   # light grey  — alternating data rows
     ROW_YELL  = "FFFFFF00"   # yellow      — zero-netting group separator
     COL_POS   = "FFC00000"   # red         — positive amounts
     COL_NEG   = "FF375623"   # green       — negative amounts
