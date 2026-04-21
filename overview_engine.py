@@ -169,12 +169,11 @@ def _mw(ws, row, c1, c2, val=None, bold=False, bg=WHITE,
 # ── PARSE ─────────────────────────────────────────────────────────────────────
 
 def prepare_df(file_obj):
-    """Read raw SAP export, keeping ALL rows (including blank subtotal rows)."""
+    """Read raw SAP export, stripping only trailing SAP grand-total rows."""
     df = pd.read_excel(file_obj, sheet_name=0, header=0, dtype=str)
     df.columns = [str(c).strip() for c in df.columns]
     for col in df.columns:
         if any(kw in col.lower() for kw in ["date", "datum"]):
-            # Skip "Arrears after net due date" — it contains numbers (days), not dates
             if "arrears" in col.lower():
                 continue
             df[col] = pd.to_datetime(df[col], errors="coerce")
@@ -182,6 +181,27 @@ def prepare_df(file_obj):
                     or "bedrag" in c.lower() or "betrag" in c.lower()), None)
     if amt_col:
         df[amt_col] = pd.to_numeric(df[amt_col], errors="coerce").fillna(0)
+
+    # Strip trailing SAP grand-total rows: blank Account + blank Document Number
+    # that appear AFTER the last real data row. Mid-file blank rows are group
+    # separators and must be preserved for build_overview group detection.
+    acc_col = next((c for c in df.columns if c.lower() == "account"), None)
+    doc_col = next((c for c in df.columns if "document number" in c.lower()), None)
+    if acc_col and doc_col:
+        is_real = (
+            df[acc_col].notna() &
+            ~df[acc_col].astype(str).str.strip().isin(["", "nan", "None"])
+        )
+        if is_real.any():
+            last_real_pos = is_real[::-1].idxmax()  # last index with real data
+            # Drop rows after last_real_pos that have blank acc AND blank doc
+            is_sap_total = (
+                (df[acc_col].isna() | df[acc_col].astype(str).str.strip().isin(["", "nan", "None"])) &
+                (df[doc_col].isna() | df[doc_col].astype(str).str.strip().isin(["", "nan", "None"]))
+            )
+            trailing_totals = is_sap_total & (df.index > last_real_pos)
+            df = df[~trailing_totals].reset_index(drop=True)
+
     return df, amt_col
 
 
