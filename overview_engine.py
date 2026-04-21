@@ -495,23 +495,38 @@ def build_overview(df: pd.DataFrame, amt_col: str,
                    lang:          str = "en",
                    remove_overdues: bool = False) -> BytesIO:
     """
-    Multi-year overview — same flat row style as build_current_overview,
-    but grouped by year with dark-blue year banners, column headers per year,
-    medium-blue year totals, and a grand total at the bottom.
-    Within each year: sorted newest net due date first.
-    Yellow rows for zero-netting groups.
+    Multi-year overview — preserves SAP blank-row group separators exactly.
+
+    Structure:
+      1. CURRENT OPEN ITEMS  — groups whose rows all precede the first
+         historical clearing block (index boundary detected automatically).
+         Plain white/light-blue alternating rows (no special background).
+         Current-open total row (mid-blue).
+      2. One section per calendar year, newest year first.
+         Each year: dark-blue banner → mid-blue column headers → data rows
+         → yellow zero-subtotal rows (payment grouping boundaries) →
+         mid-blue year total.
+      3. Net Balance grand total (dark blue).
+
+    Colours match build_current_overview exactly:
+      - Dark navy  #1F3864 — year banners, grand total
+      - Mid blue   #2E75B6 — column headers, year totals, open total
+      - White      #FFFFFF / Light blue #EBF3FB — alternating data rows
+      - Yellow     #FFFF00 — zero-netting group separator rows
+      - Red        #C00000 — positive amounts (invoices)
+      - Green      #375623 — negative amounts (credits / payments)
     """
     import datetime as _dt
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
     HDR_FILL  = "FF1F3864"   # dark blue  — year banner + grand total
-    BAND_FILL = "FF2E75B6"   # mid blue   — column headers + year total
-    ROW_WHITE = "FFFFFFFF"
-    ROW_BLUE  = "FFEBF3FB"
-    ROW_YELL  = "FFFFFF00"
-    COL_POS   = "FFC00000"
-    COL_NEG   = "FF375623"
+    BAND_FILL = "FF2E75B6"   # mid blue   — column headers + year/open totals
+    ROW_WHITE = "FFFFFFFF"   # plain white — data rows (incl. current open)
+    ROW_BLUE  = "FFEBF3FB"   # light blue  — alternating data rows
+    ROW_YELL  = "FFFFFF00"   # yellow      — zero-netting group separator
+    COL_POS   = "FFC00000"   # red         — positive amounts
+    COL_NEG   = "FF375623"   # green       — negative amounts
     COL_WHT   = "FFFFFFFF"
     COL_BLK   = "FF000000"
 
@@ -533,7 +548,7 @@ def build_overview(df: pd.DataFrame, amt_col: str,
         "doc_number_str","ref","sap_class","is_open","header_text",
         "clearing_date","clearing_doc","text",
     }
-    display_cols = [c for c in df.columns if c not in STRIP]
+    display_cols = [c for c in df.columns if c not in STRIP and c is not None and str(c) != "None"]
     ncols  = len(display_cols)
     col_widths = {
         "Account":10,"Assignment":14,"Document Number":18,
@@ -559,45 +574,200 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     if remove_overdues and arr_col:
         df = df[df[arr_col].fillna(0) <= 0].copy()
 
-    # Recalculate arrears to today for multi-year
-    import datetime as _dt2
-    df = _recalc_arrears(df, _dt2.date.today())
+    # Recalculate arrears to today
+    df = _recalc_arrears(df, _dt.date.today())
 
-    # Parse groups and bucket by year
-    all_groups = _parse_groups(df, amt_col)
-    SKIP = {"AB","ZP","DZ"}
-    by_year = {yr: [] for yr in range(year_from, year_to+1)}
-    for grp in all_groups:
-        yr = _group_year(grp, doc_date_col, doc_type_col, amt_col)
-        if yr is not None and year_from <= yr <= year_to:
-            by_year[yr].append(grp)
+    # ── Parse SAP groups using blank Account rows as separators ──────────────
+    # Each group = list of (original_index, row) tuples
+    groups_raw, cur = [], []
+    for idx, row in df.iterrows():
+        acc = str(row.get(acc_col, "") or "").strip() if acc_col else ""
+        if acc and acc not in ("nan", "None", ""):
+            cur.append((idx, row))
+        else:
+            if cur:
+                groups_raw.append(cur)
+                cur = []
+    if cur:
+        groups_raw.append(cur)
 
-    # Sort each year newest net due date first
-    def _oldest_due(grp):
+    # ── Split: current-open groups vs historical ──────────────────────────────
+    # The SAP export places current open items before the first clearing block.
+    # We detect the boundary as the first group that contains a DZ/ZP payment
+    # row or whose max index exceeds the open-items block.
+    # Heuristic: find the first group index where any row has a DZ/ZP/AB doc
+    # type AND a net due date in the past (i.e. it is a cleared historical group).
+    CLEARING_TYPES = {"DZ", "ZP", "AB"}
+
+    def _is_historical(grp):
+        """True if this group contains at least one clearing/payment row."""
+        for _, row in grp:
+            dt = str(row.get(doc_type_col, "") or "").strip().upper()
+            if dt in CLEARING_TYPES:
+                return True
+        return False
+
+    first_hist_idx = None
+    for gi, grp in enumerate(groups_raw):
+        if _is_historical(grp):
+            first_hist_idx = gi
+            break
+
+    if first_hist_idx is None:
+        # No clearing rows found — treat everything as current open
+        current_open_groups = [[r for _, r in grp] for grp in groups_raw]
+        historical_groups   = []
+    else:
+        current_open_groups = [[r for _, r in grp] for grp in groups_raw[:first_hist_idx]]
+        historical_groups   = [[r for _, r in grp] for grp in groups_raw[first_hist_idx:]]
+
+    # ── Bucket historical groups by year ──────────────────────────────────────
+    SKIP_TYPES = {"AB", "ZP", "DZ"}
+
+    def _group_year_local(grp):
         dates = []
         for row in grp:
-            dt = str(row.get(doc_type_col,"") or "").strip().upper() if doc_type_col else ""
-            nd = row.get(ndd_col) if ndd_col else None
-            if nd is not None and pd.notna(nd) and dt not in SKIP:
-                dates.append(pd.Timestamp(nd))
-        return min(dates) if dates else pd.Timestamp.min
+            dt = str(row.get(doc_type_col, "") or "").strip().upper()
+            if dt in SKIP_TYPES:
+                continue
+            for c in [ndd_col, doc_date_col]:
+                v = row.get(c) if c else None
+                if v is not None and pd.notna(v):
+                    dates.append(pd.Timestamp(v))
+        if not dates:
+            return None
+        return min(dates).year
 
-    for yr in by_year:
-        by_year[yr].sort(key=lambda g: -int(_oldest_due(g).timestamp()))
+    year_groups: dict = {}
+    for grp in historical_groups:
+        yr = _group_year_local(grp)
+        if yr is not None and year_from <= yr <= year_to:
+            year_groups.setdefault(yr, []).append(grp)
 
-    # Build workbook
+    # ── Helper: write a single data row ──────────────────────────────────────
+    def _write_data_row(ws, r, row, bg, amt_ci):
+        for ci, col in enumerate(display_cols, 1):
+            val = row.get(col, "")
+            if isinstance(val, pd.Timestamp):
+                val = val.to_pydatetime()
+            elif not isinstance(val, (str, int, float, _dt.datetime, type(None))):
+                val = str(val)
+            elif isinstance(val, float):
+                if val != val: val = None
+                elif val == int(val): val = int(val)
+            is_amt = amt_col and col == amt_col
+            cell = ws.cell(r, ci, value=val if val != "" else None)
+            if is_amt and isinstance(val, (int, float)) and val is not None:
+                cell.font = _font(color=COL_POS if val > 0 else (COL_NEG if val < 0 else COL_BLK))
+                cell.number_format = "#,##0.00"
+                cell.alignment = _aln("right")
+            elif isinstance(val, _dt.datetime):
+                cell.font = _font()
+                cell.number_format = "DD/MM/YYYY"
+                cell.alignment = _aln("left")
+            else:
+                cell.font = _font()
+                cell.alignment = _aln("left")
+            cell.fill   = _fill(bg)
+            cell.border = _thin()
+        ws.row_dimensions[r].height = 13
+
+    def _write_col_headers(ws, r):
+        for ci, h in enumerate(display_cols, 1):
+            cell = ws.cell(r, ci, value=h)
+            cell.font      = _font(bold=True, color=COL_WHT, size=9)
+            cell.fill      = _fill(BAND_FILL)
+            cell.alignment = _aln("center")
+            cell.border    = _thin()
+        ws.row_dimensions[r].height = 15
+
+    def _write_zero_subtotal(ws, r, amt_ci):
+        for ci in range(1, ncols+1):
+            cell = ws.cell(r, ci)
+            cell.fill   = _fill(ROW_YELL)
+            cell.border = _thin()
+            if ci == amt_ci:
+                cell.value         = 0
+                cell.font          = _font(bold=True)
+                cell.number_format = "#,##0.00"
+                cell.alignment     = _aln("right")
+        ws.row_dimensions[r].height = 8
+
+    def _write_band_total(ws, r, label, total, amt_ci):
+        for ci in range(1, ncols+1):
+            cell = ws.cell(r, ci)
+            cell.fill   = _fill(BAND_FILL)
+            cell.border = _thin()
+        ws.cell(r, 1).value     = label
+        ws.cell(r, 1).font      = _font(bold=True, color=COL_WHT, size=10)
+        ws.cell(r, 1).alignment = _aln("left")
+        if amt_ci:
+            c = ws.cell(r, amt_ci)
+            c.value         = total
+            c.font          = _font(bold=True, color=COL_WHT, size=10)
+            c.number_format = "#,##0.00"
+            c.alignment     = _aln("right")
+        ws.row_dimensions[r].height = 18
+
+    # ── Build workbook ────────────────────────────────────────────────────────
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Overview"
     for ci, col in enumerate(display_cols, 1):
-        ws.column_dimensions[get_column_letter(ci)].width = col_widths.get(col, max(len(col)+2, 12))
+        ws.column_dimensions[get_column_letter(ci)].width = col_widths.get(col, max(len(str(col))+2, 12))
 
     r = 1
-    row_idx   = 0
+    row_idx = 0
     grand_total = 0.0
 
-    for yr in sorted(by_year.keys()):
-        groups = by_year[yr]
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION 1 — CURRENT OPEN ITEMS
+    # ══════════════════════════════════════════════════════════════════════════
+    if current_open_groups:
+        # Dark-blue banner
+        for ci in range(1, ncols+1):
+            cell = ws.cell(r, ci)
+            cell.fill   = _fill(HDR_FILL)
+            cell.border = _thin()
+        lbl = _t(lang, "title_suffix") if lang != "en" else "Current Open Items"
+        if   lang == "nl": lbl = "Huidige Openstaande Posten"
+        elif lang == "fr": lbl = "Postes Ouverts Actuels"
+        else:              lbl = "Current Open Items"
+        ws.cell(r, 1).value     = lbl
+        ws.cell(r, 1).font      = _font(bold=True, color=COL_WHT, size=12)
+        ws.cell(r, 1).alignment = _aln("left")
+        ws.row_dimensions[r].height = 22
+        r += 1
+
+        # Column headers
+        _write_col_headers(ws, r); r += 1
+
+        open_total = 0.0
+        for grp in current_open_groups:
+            grp_total = sum(
+                float(row.get(amt_col, 0) or 0)
+                for row in grp if amt_col and pd.notna(row.get(amt_col))
+            )
+            open_total += grp_total
+            for row in grp:
+                bg = ROW_WHITE if row_idx % 2 == 0 else ROW_BLUE
+                _write_data_row(ws, r, row, bg, amt_ci)
+                r += 1; row_idx += 1
+            if abs(grp_total) < 0.02:
+                _write_zero_subtotal(ws, r, amt_ci)
+                r += 1; row_idx += 1
+
+        grand_total += open_total
+        _write_band_total(ws, r, "Current Open — Total", open_total, amt_ci)
+        r += 1
+        # Gap
+        ws.row_dimensions[r].height = 8; r += 1
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SECTION 2+ — ONE SECTION PER YEAR (newest first)
+    # ══════════════════════════════════════════════════════════════════════════
+    for yr in sorted(year_groups.keys(), reverse=True):
+        groups = year_groups[yr]
         if not groups:
             continue
 
@@ -608,28 +778,22 @@ def build_overview(df: pd.DataFrame, amt_col: str,
         )
         grand_total += yr_total
 
-        # ── Year banner (dark blue) ───────────────────────────────────────────
+        # Dark-blue year banner
         for ci in range(1, ncols+1):
             cell = ws.cell(r, ci)
-            cell.fill = _fill(HDR_FILL)
+            cell.fill   = _fill(HDR_FILL)
             cell.border = _thin()
-        ws.cell(r, 1).value = str(yr)
-        ws.cell(r, 1).font  = _font(bold=True, color=COL_WHT, size=12)
+        ws.cell(r, 1).value     = str(yr)
+        ws.cell(r, 1).font      = _font(bold=True, color=COL_WHT, size=12)
         ws.cell(r, 1).alignment = _aln("left")
         ws.row_dimensions[r].height = 22
         r += 1
 
-        # ── Column headers (mid blue) ─────────────────────────────────────────
-        for ci, h in enumerate(display_cols, 1):
-            cell = ws.cell(r, ci, value=h)
-            cell.font      = _font(bold=True, color=COL_WHT, size=9)
-            cell.fill      = _fill(BAND_FILL)
-            cell.alignment = _aln("center")
-            cell.border    = _thin()
-        ws.row_dimensions[r].height = 15
-        r += 1
+        # Mid-blue column headers
+        _write_col_headers(ws, r); r += 1
 
-        # ── Data rows ─────────────────────────────────────────────────────────
+        # Data rows + yellow zero-subtotals
+        row_idx = 0
         for grp in groups:
             grp_total = sum(
                 float(row.get(amt_col, 0) or 0)
@@ -637,75 +801,29 @@ def build_overview(df: pd.DataFrame, amt_col: str,
             )
             for row in grp:
                 bg = ROW_WHITE if row_idx % 2 == 0 else ROW_BLUE
-                for ci, col in enumerate(display_cols, 1):
-                    val = row.get(col, "")
-                    if isinstance(val, pd.Timestamp):
-                        val = val.to_pydatetime()
-                    elif not isinstance(val, (str, int, float, _dt.datetime, type(None))):
-                        val = str(val)
-                    elif isinstance(val, float):
-                        if val != val: val = None
-                        elif val == int(val): val = int(val)
-                    is_amt = amt_col and col == amt_col
-                    cell = ws.cell(r, ci, value=val if val != "" else None)
-                    if is_amt and isinstance(val, (int, float)) and val is not None:
-                        cell.font = _font(color=COL_POS if val > 0 else (COL_NEG if val < 0 else COL_BLK))
-                        cell.number_format = "#,##0.00"
-                        cell.alignment = _aln("right")
-                    elif isinstance(val, _dt.datetime):
-                        cell.font = _font()
-                        cell.number_format = "DD/MM/YYYY"
-                        cell.alignment = _aln("left")
-                    else:
-                        cell.font = _font()
-                        cell.alignment = _aln("left")
-                    cell.fill   = _fill(bg)
-                    cell.border = _thin()
-                ws.row_dimensions[r].height = 13
-                r += 1
-                row_idx += 1
-
-            # Yellow row when group nets to zero
+                _write_data_row(ws, r, row, bg, amt_ci)
+                r += 1; row_idx += 1
+            # Yellow separator row for every group that nets to zero
             if abs(grp_total) < 0.02:
-                for ci in range(1, ncols+1):
-                    cell = ws.cell(r, ci)
-                    cell.fill   = _fill(ROW_YELL)
-                    cell.border = _thin()
-                    if ci == amt_ci:
-                        cell.value = 0
-                        cell.font  = _font(bold=True)
-                        cell.number_format = "#,##0.00"
-                        cell.alignment = _aln("right")
-                ws.row_dimensions[r].height = 8
-                r += 1
-                row_idx += 1
+                _write_zero_subtotal(ws, r, amt_ci)
+                r += 1; row_idx += 1
 
-        # ── Year total (mid blue) ─────────────────────────────────────────────
-        for ci in range(1, ncols+1):
-            cell = ws.cell(r, ci)
-            cell.fill   = _fill(BAND_FILL)
-            cell.border = _thin()
-        ws.cell(r, 1).value     = f"{yr} — Total"
-        ws.cell(r, 1).font      = _font(bold=True, color=COL_WHT, size=10)
-        ws.cell(r, 1).alignment = _aln("left")
-        if amt_ci:
-            ws.cell(r, amt_ci).value          = yr_total
-            ws.cell(r, amt_ci).font           = _font(bold=True, color=COL_WHT, size=10)
-            ws.cell(r, amt_ci).number_format  = "#,##0.00"
-            ws.cell(r, amt_ci).alignment      = _aln("right")
-        ws.row_dimensions[r].height = 18
+        # Mid-blue year total
+        yr_label = _t(lang, "year_total", yr=yr)
+        _write_band_total(ws, r, yr_label, yr_total, amt_ci)
         r += 1
 
         # Small gap before next year
-        ws.row_dimensions[r].height = 8
-        r += 1
+        ws.row_dimensions[r].height = 8; r += 1
 
-    # ── Grand total (dark blue) ───────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════════
+    # GRAND TOTAL — dark blue
+    # ══════════════════════════════════════════════════════════════════════════
     for ci in range(1, ncols+1):
         cell = ws.cell(r, ci)
         cell.fill   = _fill(HDR_FILL)
         cell.border = _thin()
-    ws.cell(r, 1).value     = "Net Balance"
+    ws.cell(r, 1).value     = _t(lang, "net_balance")
     ws.cell(r, 1).font      = _font(bold=True, color=COL_WHT, size=11)
     ws.cell(r, 1).alignment = _aln("left")
     if amt_ci:
