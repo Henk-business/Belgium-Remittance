@@ -592,34 +592,42 @@ def build_overview(df: pd.DataFrame, amt_col: str,
         groups_raw.append(cur)
 
     # ── Split: current-open groups vs historical ──────────────────────────────
-    # The SAP export places current open items before the first clearing block.
-    # We detect the boundary as the first group that contains a DZ/ZP payment
-    # row or whose max index exceeds the open-items block.
-    # Heuristic: find the first group index where any row has a DZ/ZP/AB doc
-    # type AND a net due date in the past (i.e. it is a cleared historical group).
-    CLEARING_TYPES = {"DZ", "ZP", "AB"}
+    # SAP exports place current open items first, followed by cleared/historical
+    # groups each terminated by a DZ or ZP payment row.
+    # Detection strategy: a group is "historical" (cleared) when it contains at
+    # least one DZ or ZP row (actual payment documents). AB rows appear in BOTH
+    # open and historical sections so cannot be used as the discriminator.
+    # We scan from the end of groups_raw backwards: the first group (from the
+    # front) that has NO DZ/ZP row and whose dataframe indices all fall before
+    # the first DZ/ZP row in the entire file is the open-items block.
+    # Simpler and robust: find the minimum dataframe index of any DZ or ZP row.
+    # Every group whose rows all sit before that index is current-open.
+    PAY_TYPES = {"DZ", "ZP"}
 
-    def _is_historical(grp):
-        """True if this group contains at least one clearing/payment row."""
-        for _, row in grp:
+    # Find the first (lowest) dataframe index that has a DZ or ZP doc type
+    first_pay_index = None
+    if doc_type_col:
+        for idx, row in df.iterrows():
             dt = str(row.get(doc_type_col, "") or "").strip().upper()
-            if dt in CLEARING_TYPES:
-                return True
-        return False
+            if dt in PAY_TYPES:
+                first_pay_index = idx
+                break
 
-    first_hist_idx = None
-    for gi, grp in enumerate(groups_raw):
-        if _is_historical(grp):
-            first_hist_idx = gi
-            break
-
-    if first_hist_idx is None:
-        # No clearing rows found — treat everything as current open
+    if first_pay_index is None:
+        # No payment rows at all — everything is current open
         current_open_groups = [[r for _, r in grp] for grp in groups_raw]
         historical_groups   = []
     else:
-        current_open_groups = [[r for _, r in grp] for grp in groups_raw[:first_hist_idx]]
-        historical_groups   = [[r for _, r in grp] for grp in groups_raw[first_hist_idx:]]
+        # Groups whose maximum row index falls before the first payment row
+        # are current-open; everything else is historical
+        current_open_groups = []
+        historical_groups   = []
+        for grp in groups_raw:
+            max_idx = max(i for i, _ in grp)
+            if max_idx < first_pay_index:
+                current_open_groups.append([r for _, r in grp])
+            else:
+                historical_groups.append([r for _, r in grp])
 
     # ── Bucket historical groups by year ──────────────────────────────────────
     SKIP_TYPES = {"AB", "ZP", "DZ"}
@@ -729,10 +737,10 @@ def build_overview(df: pd.DataFrame, amt_col: str,
             cell = ws.cell(r, ci)
             cell.fill   = _fill(HDR_FILL)
             cell.border = _thin()
-        lbl = _t(lang, "title_suffix") if lang != "en" else "Current Open Items"
-        if   lang == "nl": lbl = "Huidige Openstaande Posten"
-        elif lang == "fr": lbl = "Postes Ouverts Actuels"
-        else:              lbl = "Current Open Items"
+        _open_labels = {"en": "Current Open Items",
+                        "nl": "Huidige Openstaande Posten",
+                        "fr": "Postes Ouverts Actuels"}
+        lbl = _open_labels.get(lang, "Current Open Items")
         ws.cell(r, 1).value     = lbl
         ws.cell(r, 1).font      = _font(bold=True, color=COL_WHT, size=12)
         ws.cell(r, 1).alignment = _aln("left")
@@ -758,7 +766,10 @@ def build_overview(df: pd.DataFrame, amt_col: str,
                 r += 1; row_idx += 1
 
         grand_total += open_total
-        _write_band_total(ws, r, "Current Open — Total", open_total, amt_ci)
+        _open_total_lbl = {"en": "Current Open — Total",
+                           "nl": "Huidige Openstaand — Totaal",
+                           "fr": "Postes Ouverts — Total"}
+        _write_band_total(ws, r, _open_total_lbl.get(lang, "Current Open — Total"), open_total, amt_ci)
         r += 1
         # Gap
         ws.row_dimensions[r].height = 8; r += 1
