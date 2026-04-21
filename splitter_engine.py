@@ -19,9 +19,9 @@ _DOC_LABELS = {
     "nl": {"RV+":"Factuur","RV-":"Creditnota","ZP":"Betaling","DZ":"Betaling",
            "RS+":"Refactuur (bonuscorrectie)","RS-":"Bonus",
            "AB":"Verrekening","X_PAY":"Uitbetaling aan klant"},
-    "fr": {"RV+":"Facture","RV-":"Avoir","ZP":"Paiement","DZ":"Paiement",
+    "fr": {"RV+":"Facture","RV-":"Note de crédit","ZP":"Paiement","DZ":"Paiement",
            "RS+":"Re-facturation (correction bonus)","RS-":"Bonus",
-           "AB":"Compensation","X_PAY":"Paiement au client"},
+           "AB":"Ajustement comptable","X_PAY":"Virement au client"},
 }
 
 def translate_doc_types(df: "pd.DataFrame", lang: str = "en") -> "pd.DataFrame":

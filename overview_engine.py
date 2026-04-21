@@ -92,7 +92,7 @@ T = {
     "fr": {
         "title_suffix":    "Aperçu client",
         "subtitle":        "Groupé par document de compensation  ·  Année = facture la plus ancienne  ·  Positif = factures (rouge)  ·  Négatif = avoirs / paiements (vert)",
-        "year_banner":     "{yr}  ·  {n} groupes  ·  Factures: €{inv}  ·  Avoirs: €{cred}  ·  Net: €{net}",
+        "year_banner":     "{yr}  ·  {n} groupes  ·  Factures: €{inv}  ·  Notes de crédit: €{cred}  ·  Net: €{net}",
         "year_total":      "{yr} — Total",
         "grand_total":     "Total général {a}–{b}",
         "net_balance":     "Solde net",
@@ -102,10 +102,10 @@ T = {
         "gl_other":        "Autre",
         "desc_col":        "Description",
         "doc_types": {
-            "RV+": "Facture",          "RV-": "Avoir",
+            "RV+": "Facture",          "RV-": "Note de crédit",
             "ZP":  "Paiement",         "DZ":  "Paiement",
             "RS+": "Re-facturation",   "RS-": "Bonus",
-            "AB":  "Compensation",     "X_PAY": "Paiement au client",
+            "AB":  "Ajustement comptable",     "X_PAY": "Virement au client",
         },
     },
 }
