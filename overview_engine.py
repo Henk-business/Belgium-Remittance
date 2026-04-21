@@ -599,19 +599,15 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     if amt_col:      df[amt_col]      = pd.to_numeric( df[amt_col],      errors="coerce")
     if arr_col:      df[arr_col]      = pd.to_numeric( df[arr_col],      errors="coerce")
 
-    if remove_overdues and arr_col:
-        df = df[df[arr_col].fillna(0) <= 0].copy()
-
-    # Recalculate arrears to today
+    # Recalculate arrears to today (must happen BEFORE any overdue filter)
     df = _recalc_arrears(df, _dt.date.today())
 
-    # Remove overdues AFTER recalc so arrears values are current
+    # Remove overdue rows AFTER recalc — keep blank separator rows intact
     if remove_overdues and arr_col:
-        if arr_col in df.columns:
-            df[arr_col] = pd.to_numeric(df[arr_col], errors="coerce")
-        is_blank = df[acc_col].isna() | df[acc_col].astype(str).str.strip().isin(["","nan","None"]) \
+        df[arr_col] = pd.to_numeric(df[arr_col], errors="coerce")
+        is_blank = (df[acc_col].isna() | df[acc_col].astype(str).str.strip().isin(["","nan","None"])) \
                    if acc_col else pd.Series(False, index=df.index)
-        arr = pd.to_numeric(df[arr_col], errors="coerce").fillna(0) if arr_col else pd.Series(0, index=df.index)
+        arr = df[arr_col].fillna(0)
         df = df[is_blank | (arr <= 0)].copy()
     # ── Parse SAP groups using blank Account rows as separators ──────────────
     # Each group = list of (original_index, row) tuples
@@ -770,33 +766,35 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     row_idx = 0
     grand_total = 0.0
 
-    # ── Row 1: Title (dark blue, size 14, bold, centred) ─────────────────────
+    # ── Row 1: Title (dark blue, size 14, bold, centred, MERGED) ────────────
     acc_display = account_id or (
         str(df[acc_col].dropna().iloc[0]).strip().split(".")[0]
         if acc_col and len(df[acc_col].dropna()) > 0 else ""
     )
     yr_range = f"{year_from}–{year_to}" if year_from != year_to else str(year_from)
     title_val = f"Account {acc_display}  ·  {yr_range}  {_t(lang, 'title_suffix')}"
+    # Fill all cells dark blue first
     for ci in range(1, ncols+1):
-        cell = ws.cell(r, ci)
-        cell.fill   = _fill(HDR_FILL)
-        cell.border = _thin()
+        ws.cell(r, ci).fill   = _fill(HDR_FILL)
+        ws.cell(r, ci).border = _thin()
+    # Merge across all columns so title is fully visible
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=ncols)
     ws.cell(r, 1).value     = title_val
     ws.cell(r, 1).font      = _font(bold=True, color=COL_WHT, size=14)
-    ws.cell(r, 1).alignment = _aln("center")
+    ws.cell(r, 1).alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
     ws.row_dimensions[r].height = 34
     r += 1
 
-    # ── Row 2: Subtitle (mid blue, size 9, not bold) ──────────────────────────
+    # ── Row 2: Subtitle (mid blue, size 9, not bold, MERGED) ─────────────────
     today_str = _dt.date.today().strftime("%d/%m/%Y")
     subtitle_val = f"{_t(lang, 'subtitle')}  ·  {today_str}"
     for ci in range(1, ncols+1):
-        cell = ws.cell(r, ci)
-        cell.fill   = _fill(BAND_FILL)
-        cell.border = _thin()
+        ws.cell(r, ci).fill   = _fill(BAND_FILL)
+        ws.cell(r, ci).border = _thin()
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=ncols)
     ws.cell(r, 1).value     = subtitle_val
     ws.cell(r, 1).font      = _font(bold=False, color=COL_WHT, size=9)
-    ws.cell(r, 1).alignment = _aln("center")
+    ws.cell(r, 1).alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
     ws.row_dimensions[r].height = 16
     r += 1
 
@@ -806,8 +804,10 @@ def build_overview(df: pd.DataFrame, amt_col: str,
 
     # ══════════════════════════════════════════════════════════════════════════
     # SECTION 1 — CURRENT OPEN ITEMS
+    # When remove_overdues is True, skip this section entirely — the open items
+    # are by definition the outstanding/overdue items the user wants excluded.
     # ══════════════════════════════════════════════════════════════════════════
-    if current_open_groups:
+    if current_open_groups and not remove_overdues:
         # Dark-blue banner
         for ci in range(1, ncols+1):
             cell = ws.cell(r, ci)
