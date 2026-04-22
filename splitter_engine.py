@@ -156,6 +156,12 @@ def split_accounts(df, account_col, amount_col, due_date_col,
             due = pd.to_datetime(acc_df[due_date_col], errors="coerce")
             acc_df = acc_df[due.isna() | (due <= ref_ts)].copy()
 
+        # ── Filter to current year only (year of reference_date)
+        # Prevents multi-year exports from including historical years
+        if due_date_col and due_date_col in acc_df.columns:
+            due_yr = pd.to_datetime(acc_df[due_date_col], errors="coerce").dt.year
+            acc_df = acc_df[due_yr.isna() | (due_yr == ref_ts.year)].copy()
+
         # ── Strip unwanted SAP columns
         cols_to_drop = [col for col in acc_df.columns if col in STRIP_COLS]
         if cols_to_drop:
@@ -201,12 +207,14 @@ def _recalc_arrears_df(df, today):
         except Exception:
             df.loc[mask, arr_col] = days.astype(str)
     return df
-def build_split_workbook(account_data, amount_col, today=None, title_prefix="", templates=None):
+def build_split_workbook(account_data, amount_col, today=None, title_prefix="", templates=None, lang="en"):
     if today is None:
         today = datetime.date.today()
     today_str = pd.Timestamp(today).strftime("%d/%m/%Y")
     # Recalculate arrears for each account df based on reference date
     account_data = {acc: _recalc_arrears_df(df, today) for acc, df in account_data.items()}
+    # Translate Document Type codes to human-readable descriptions
+    account_data = {acc: translate_doc_types(df, lang) for acc, df in account_data.items()}
 
     wb = openpyxl.Workbook()
     _default_sheet = wb.active  # track default sheet to remove after adding real sheets
@@ -277,7 +285,8 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
         r2 += 2
 
         for ci, col_name in enumerate(acc_df.columns, 1):
-            cell = ws.cell(row=r2, column=ci, value=str(col_name))
+            display_name = "Description" if "document type" in str(col_name).lower() else str(col_name)
+            cell = ws.cell(row=r2, column=ci, value=display_name)
             cell.font = Font(name="Arial", bold=True, color="FFFFFF", size=9)
             cell.fill = PatternFill("solid", fgColor=BG["md_blue"])
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)

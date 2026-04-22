@@ -206,15 +206,8 @@ def show():
     st.markdown("### 📥 Downloads")
     st.caption("Custom rules and templates are applied automatically per account.")
 
-    st.download_button(
-        "⬇  Download all accounts (standard layout)",
-        data=st.session_state["spl_result"].getvalue(),
-        file_name=f"Accounts_{safe_date}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True, key="spl_dl_all",
-    )
-
-    # Language selector for document type translation
+    # Language selector — must come BEFORE the download button so the translated
+    # workbook is built with the correct language when the user clicks download.
     dl_l, dl_r = st.columns([1, 3])
     with dl_l:
         dl_lang = st.selectbox(
@@ -224,6 +217,20 @@ def show():
             key="spl_dl_lang",
             help="Translates Document Type column: Invoice, Credit note, Payment, etc.",
         )
+
+    # Build the combined workbook with the selected language (happens on every render,
+    # cheap enough for typical account counts).
+    _translated_all = build_split_workbook(
+        account_data, amount_col, today=ref_date, lang=dl_lang
+    )
+
+    st.download_button(
+        "⬇  Download all accounts (standard layout)",
+        data=_translated_all.getvalue(),
+        file_name=f"Accounts_{safe_date}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True, key="spl_dl_all",
+    )
     # ── Build account group mapping ──────────────────────────────────────────
     # Groups: {primary_id: {accounts:[...], label:..., tmpl_bytes:...}}
     group_map    = {}  # acc_id -> primary_id (which group it belongs to)
@@ -373,12 +380,12 @@ def show():
                 # Standard layout
                 acc_wb_bytes = build_split_workbook(
                     {acc: acc_df_sel}, amount_col, today=ref_date,
-                    title_prefix=f"Account {acc} — ").getvalue()
+                    title_prefix=f"Account {acc} — ", lang=dl_lang).getvalue()
                 layout_label = "standard layout"
 
         except Exception as e:
             acc_wb_bytes = build_split_workbook(
-                {acc: acc_df_sel}, amount_col, today=ref_date).getvalue()
+                {acc: acc_df_sel}, amount_col, today=ref_date, lang=dl_lang).getvalue()
             layout_label = f"error: {e}"
 
         dl_c, info_c = st.columns([2, 3])
