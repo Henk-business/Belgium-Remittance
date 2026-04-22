@@ -296,7 +296,10 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
                             remove_not_due: bool = False,
                             remove_overdues: bool = False,
                             month_from: int = 1,
-                            month_to: int = 12) -> BytesIO:
+                            month_to: int = 12,
+                            account_id: str = "",
+                            customer_name: str = "",
+                            lang: str = "en") -> BytesIO:
     """
     Current overview — shows ONLY the current open items section.
     These are the rows that appear before the first DZ/ZP (payment) row
@@ -427,18 +430,53 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
     for ci, col in enumerate(display_cols, 1):
         ws.column_dimensions[get_column_letter(ci)].width = col_widths.get(col, max(len(str(col))+2, 12))
 
-    # Header row
+    # ── Row 1: Title (dark blue, size 14, bold, merged) ───────────────────────
+    _acc = account_id or (
+        str(df[acc_col].dropna().iloc[0]).strip().split(".")[0]
+        if acc_col and len(df[acc_col].dropna()) > 0 else ""
+    )
+    ref_yr = ref_ts.year
+    _title_suffix = {"en": "Current Overview", "nl": "Huidig Overzicht", "fr": "Aperçu Actuel"}
+    title_val = f"Account {_acc}  ·  {ref_yr}  {_title_suffix.get(lang, 'Current Overview')}"
+    if customer_name:
+        title_val = f"{customer_name}  ·  " + title_val
+    for ci in range(1, ncols+1):
+        ws.cell(1, ci).fill   = _fill(HDR_FILL)
+        ws.cell(1, ci).border = _thin()
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
+    ws.cell(1, 1).value     = title_val
+    ws.cell(1, 1).font      = _font(bold=True, color=COL_WHT, size=14)
+    ws.cell(1, 1).alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
+    ws.row_dimensions[1].height = 34
+
+    # ── Row 2: Subtitle (mid blue, size 9) ───────────────────────────────────
+    BAND_FILL = "FF2E75B6"
+    today_str = ref_ts.strftime("%d/%m/%Y")
+    _sub = {"en": "Current open items  ·  Positive = invoices (red)  ·  Negative = credits / payments (green)",
+            "nl": "Huidige openstaande posten  ·  Positief = facturen (rood)  ·  Negatief = creditnota's / betalingen (groen)",
+            "fr": "Postes ouverts actuels  ·  Positif = factures (rouge)  ·  Négatif = avoirs / paiements (vert)"}
+    subtitle_val = f"{_sub.get(lang, _sub['en'])}  ·  {today_str}"
+    for ci in range(1, ncols+1):
+        ws.cell(2, ci).fill   = _fill(BAND_FILL)
+        ws.cell(2, ci).border = _thin()
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=ncols)
+    ws.cell(2, 1).value     = subtitle_val
+    ws.cell(2, 1).font      = _font(bold=False, color=COL_WHT, size=9)
+    ws.cell(2, 1).alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
+    ws.row_dimensions[2].height = 16
+
+    # ── Row 3: Column headers ─────────────────────────────────────────────────
     for ci, col in enumerate(display_cols, 1):
         h = "Description" if doc_type_col and col == doc_type_col else col
-        cell = ws.cell(1, ci, value=h)
+        cell = ws.cell(3, ci, value=h)
         cell.font = _font(bold=True, color=COL_WHT, size=9)
         cell.fill = _fill(HDR_FILL)
         cell.alignment = _aln("center")
         cell.border = _thin()
-    ws.row_dimensions[1].height = 15
-    ws.freeze_panes = "A2"
+    ws.row_dimensions[3].height = 15
+    ws.freeze_panes = "A4"
 
-    r = 2
+    r = 4
     amt_ci = (display_cols.index(amt_col) + 1) if amt_col and amt_col in display_cols else None
 
     for row_idx, (_, row) in enumerate(df.iterrows()):
@@ -447,7 +485,7 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
             val = row.get(col, "")
             if doc_type_col and col == doc_type_col:
                 pm  = row.get(pay_col, "") if pay_col else ""
-                val = _desc(val, row.get(amt_col, 0), pm, "en")
+                val = _desc(val, row.get(amt_col, 0), pm, lang)
             elif isinstance(val, pd.Timestamp):
                 val = val.to_pydatetime()
             elif not isinstance(val, (str, int, float, _dt.datetime, type(None))):

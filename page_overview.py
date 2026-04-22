@@ -267,6 +267,9 @@ def show():
                         remove_overdues=remove_overdues,
                         month_from=month_from,
                         month_to=month_to,
+                        account_id=(account_filter if account_filter != "All accounts" else ""),
+                        customer_name=customer_name.strip(),
+                        lang=lang,
                     )
                 else:
                     result = build_overview(
