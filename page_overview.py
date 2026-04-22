@@ -16,6 +16,11 @@ def show():
         "sorted newest to oldest by net due date."
     )
 
+    # ── Clear stale session keys from older versions ──────────────────────────
+    for _old_key in ("ov_remove_nd", "ov_remove_nd_v1", "ov_remove_nd2"):
+        if _old_key in st.session_state:
+            del st.session_state[_old_key]
+
     # ── UPLOAD ────────────────────────────────────────────────────────────────
     st.markdown("### 1 · Upload SAP export")
     uploaded = st.file_uploader(
@@ -147,7 +152,7 @@ def show():
             )
         with sc2:
             remove_not_due = st.checkbox(
-                "Remove not yet due", value=False, key="ov_remove_nd2",
+                "Remove not yet due", value=False, key="ov_remove_nd_v2",
             )
         remove_overdues = False
         year_from = year_to = yr_max
