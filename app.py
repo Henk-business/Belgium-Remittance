@@ -7,9 +7,8 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── AB InBev brand palette ──────────────────────────────────────────────────
-# Primary: Deep Crimson, Gold, Near-Black, White
-# Crimson  #C41230   Gold     #C8922A   Dark   #1A0A00   Warm grey #F5F0EB
+# ── AB InBev brand palette (2022 modern identity) ──────────────────────────
+# Black  #0A0A0A  · Orange/Gold #F7951D  · White #FFFFFF  · Off-white #FAF8F5
 
 st.markdown("""
 <style>
@@ -18,23 +17,22 @@ st.markdown("""
 /* ── Global ───────────────────────────────────────────────────────────────── */
 html, body, [class*="css"] {
     font-family: 'Inter', sans-serif;
-    background-color: #FAF7F4;
+    background-color: #FAF8F5;
 }
 
 /* ── Sidebar ──────────────────────────────────────────────────────────────── */
 [data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #1A0A00 0%, #2D1005 60%, #1A0A00 100%) !important;
+    background: #0A0A0A !important;
     min-width: 230px;
-    border-right: 1px solid rgba(200,146,42,0.2);
+    border-right: 1px solid rgba(247,149,29,0.15);
 }
 
-/* Sidebar logo area */
+/* Orange top stripe on sidebar */
 [data-testid="stSidebar"]::before {
     content: "";
     display: block;
-    height: 4px;
-    background: linear-gradient(90deg, #C41230, #C8922A, #C41230);
-    margin-bottom: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #F7951D, #E07B00, #F7951D);
 }
 
 /* Sidebar text */
@@ -43,105 +41,100 @@ html, body, [class*="css"] {
 [data-testid="stSidebar"] span,
 [data-testid="stSidebar"] .stRadio label p,
 [data-testid="stSidebar"] .stRadio label span {
-    color: #F5EFE6 !important;
+    color: #E8E3DC !important;
     font-size: 13px;
 }
 
-/* Sidebar nav items */
-[data-testid="stSidebar"] .stRadio > div { gap: 3px; }
+/* Sidebar nav */
+[data-testid="stSidebar"] .stRadio > div { gap: 2px; }
 [data-testid="stSidebar"] .stRadio label {
-    background: rgba(255,255,255,0.04);
+    background: rgba(255,255,255,0.03);
     border-radius: 8px;
     padding: 9px 14px !important;
     margin: 1px 0;
     cursor: pointer;
-    transition: all .18s ease;
+    transition: all .15s ease;
     border: 1px solid transparent;
 }
 [data-testid="stSidebar"] .stRadio label:hover {
-    background: rgba(196,18,48,0.18) !important;
-    border-color: rgba(196,18,48,0.3) !important;
+    background: rgba(247,149,29,0.12) !important;
+    border-color: rgba(247,149,29,0.2) !important;
 }
-[data-testid="stSidebar"] .stRadio label[data-checked="true"],
 [data-testid="stSidebar"] .stRadio label:has(input:checked) {
-    background: rgba(196,18,48,0.25) !important;
-    border-color: #C41230 !important;
+    background: rgba(247,149,29,0.18) !important;
+    border-color: #F7951D !important;
 }
 
-/* Hide default nav */
 [data-testid="stSidebarNav"] { display: none; }
 
 /* ── Main layout ──────────────────────────────────────────────────────────── */
 .block-container {
-    padding-top: 1.8rem;
+    padding-top: 1.2rem !important;
     padding-bottom: 2rem;
     max-width: 1200px;
 }
 #MainMenu, footer { visibility: hidden; }
 
-/* ── Page headers (h1, h2) ────────────────────────────────────────────────── */
-h1, h2 { color: #1A0A00 !important; font-weight: 700 !important; }
-h3 { color: #2D1005 !important; font-weight: 600 !important; }
+/* ── Typography ───────────────────────────────────────────────────────────── */
+h1, h2 { color: #0A0A0A !important; font-weight: 800 !important; letter-spacing: -0.02em !important; }
+h3      { color: #1C1C1C !important; font-weight: 600 !important; }
 
-/* ── Streamlit headings via markdown ──────────────────────────────────────── */
-.stMarkdown h2 { 
-    border-bottom: 2px solid #C41230; 
-    padding-bottom: 6px; 
+.stMarkdown h2 {
+    border-bottom: 2px solid #F7951D;
+    padding-bottom: 6px;
     margin-bottom: 16px;
 }
 .stMarkdown h3 {
-    color: #C41230 !important;
-    font-size: 14px !important;
-    font-weight: 600 !important;
+    color: #F7951D !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.09em;
     margin-top: 20px;
 }
 
-/* ── Buttons ──────────────────────────────────────────────────────────────── */
+/* ── Primary buttons ──────────────────────────────────────────────────────── */
 .stButton > button {
     border-radius: 8px;
     font-weight: 600;
     font-size: 13px;
-    letter-spacing: 0.02em;
-    transition: all .18s ease;
+    letter-spacing: 0.01em;
+    transition: all .15s ease;
     border: none;
 }
 .stButton > button[kind="primary"] {
-    background: linear-gradient(135deg, #C41230, #9A0E25) !important;
-    color: white !important;
-    box-shadow: 0 2px 8px rgba(196,18,48,0.3);
+    background: #0A0A0A !important;
+    color: #F7951D !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
 }
 .stButton > button[kind="primary"]:hover {
-    background: linear-gradient(135deg, #D91535, #C41230) !important;
-    box-shadow: 0 4px 14px rgba(196,18,48,0.4);
+    background: #1C1C1C !important;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.28);
     transform: translateY(-1px);
 }
 .stButton > button[kind="secondary"] {
     background: white !important;
-    color: #1A0A00 !important;
-    border: 1px solid #D4C5B5 !important;
+    color: #0A0A0A !important;
+    border: 1.5px solid #D4CFC8 !important;
 }
 .stButton > button[kind="secondary"]:hover {
-    border-color: #C41230 !important;
-    color: #C41230 !important;
+    border-color: #F7951D !important;
+    color: #F7951D !important;
 }
 
 /* ── File uploader ────────────────────────────────────────────────────────── */
 [data-testid="stFileUploader"] {
-    border: 2px dashed #D4C5B5;
+    border: 2px dashed #D4CFC8;
     border-radius: 10px;
     background: white;
     transition: border-color .2s;
 }
-[data-testid="stFileUploader"]:hover {
-    border-color: #C41230;
-}
+[data-testid="stFileUploader"]:hover { border-color: #F7951D; }
 
 /* ── Tabs ─────────────────────────────────────────────────────────────────── */
 .stTabs [data-baseweb="tab-list"] {
     background: transparent;
-    border-bottom: 2px solid #E8DDD0;
+    border-bottom: 2px solid #E8E3DC;
     gap: 0;
 }
 .stTabs [data-baseweb="tab"] {
@@ -149,126 +142,104 @@ h3 { color: #2D1005 !important; font-weight: 600 !important; }
     padding: 8px 18px;
     font-size: 13px;
     font-weight: 500;
-    color: #6B5744;
+    color: #7A7065;
     border: none;
     background: transparent;
 }
 .stTabs [aria-selected="true"] {
-    color: #C41230 !important;
+    color: #0A0A0A !important;
     font-weight: 700 !important;
-    border-bottom: 3px solid #C41230 !important;
-    background: rgba(196,18,48,0.04) !important;
+    border-bottom: 3px solid #F7951D !important;
+    background: rgba(247,149,29,0.05) !important;
 }
 
 /* ── Expanders ────────────────────────────────────────────────────────────── */
 [data-testid="stExpander"] {
-    border: 1px solid #E8DDD0;
+    border: 1px solid #E8E3DC;
     border-radius: 10px;
     background: white;
-    box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
     margin-bottom: 8px;
 }
 [data-testid="stExpander"] summary {
     font-weight: 600;
-    color: #1A0A00;
+    color: #0A0A0A;
     padding: 12px 16px;
-}
-
-/* ── Info / success / warning / error boxes ───────────────────────────────── */
-[data-testid="stAlert"] {
-    border-radius: 10px;
-    border-left-width: 4px;
 }
 
 /* ── Metrics ──────────────────────────────────────────────────────────────── */
 [data-testid="stMetric"] {
     background: white;
     border-radius: 10px;
-    padding: 12px 16px;
-    border: 1px solid #E8DDD0;
-    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    padding: 14px 18px;
+    border: 1px solid #E8E3DC;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
 }
-[data-testid="stMetricValue"] { color: #C41230 !important; font-weight: 700 !important; }
+[data-testid="stMetricValue"] { color: #F7951D !important; font-weight: 800 !important; }
 
-/* ── Selectbox / text inputs ──────────────────────────────────────────────── */
+/* ── Form inputs ──────────────────────────────────────────────────────────── */
 [data-testid="stSelectbox"] > div > div,
 [data-testid="stTextInput"] > div > div > input,
 [data-testid="stNumberInput"] > div > div > input,
 [data-testid="stTextArea"] > div > div > textarea,
 [data-testid="stDateInput"] > div > div > input {
     border-radius: 8px;
-    border: 1px solid #D4C5B5;
+    border: 1.5px solid #D4CFC8;
     background: white;
 }
 [data-testid="stTextInput"] > div > div > input:focus {
-    border-color: #C41230;
-    box-shadow: 0 0 0 2px rgba(196,18,48,0.12);
-}
-
-/* ── Dataframe / table ────────────────────────────────────────────────────── */
-[data-testid="stDataFrame"] {
-    border-radius: 10px;
-    overflow: hidden;
-    border: 1px solid #E8DDD0;
+    border-color: #F7951D;
+    box-shadow: 0 0 0 2px rgba(247,149,29,0.15);
 }
 
 /* ── Download button ──────────────────────────────────────────────────────── */
 [data-testid="stDownloadButton"] > button {
     background: white !important;
-    color: #C41230 !important;
-    border: 2px solid #C41230 !important;
+    color: #0A0A0A !important;
+    border: 2px solid #0A0A0A !important;
     border-radius: 8px;
     font-weight: 600;
-    transition: all .18s;
+    transition: all .15s;
 }
 [data-testid="stDownloadButton"] > button:hover {
-    background: #C41230 !important;
-    color: white !important;
+    background: #0A0A0A !important;
+    color: #F7951D !important;
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(196,18,48,0.3);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.2);
 }
 
 /* ── Checkbox ─────────────────────────────────────────────────────────────── */
 [data-testid="stCheckbox"] span[aria-checked="true"] {
-    background: #C41230 !important;
-    border-color: #C41230 !important;
+    background: #F7951D !important;
+    border-color: #F7951D !important;
 }
 
-/* ── Spinner ──────────────────────────────────────────────────────────────── */
-[data-testid="stSpinner"] > div {
-    border-top-color: #C41230 !important;
+/* ── Dataframe ────────────────────────────────────────────────────────────── */
+[data-testid="stDataFrame"] {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #E8E3DC;
 }
 
-/* ── Progress bar ─────────────────────────────────────────────────────────── */
-[data-testid="stProgressBar"] > div {
-    background: linear-gradient(90deg, #C41230, #C8922A) !important;
-    border-radius: 4px;
-}
-
-/* ── Divider ──────────────────────────────────────────────────────────────── */
-hr { border-color: #E8DDD0 !important; }
-
-/* ── Caption / small text ─────────────────────────────────────────────────── */
-.stCaption, small { color: #7A6555 !important; font-size: 12px; }
-
-/* ── Radio buttons ────────────────────────────────────────────────────────── */
-[data-testid="stRadio"] label[data-checked="true"] span {
-    background: #C41230 !important;
-    border-color: #C41230 !important;
-}
+/* ── Alerts ───────────────────────────────────────────────────────────────── */
+[data-testid="stAlert"] { border-radius: 10px; border-left-width: 4px; }
 
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #F5F0EB; }
-::-webkit-scrollbar-thumb { background: #C8922A; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #C41230; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #FAF8F5; }
+::-webkit-scrollbar-thumb { background: #D4CFC8; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #F7951D; }
+
+/* ── Caption / small ──────────────────────────────────────────────────────── */
+.stCaption, small { color: #7A7065 !important; font-size: 12px; }
+
+/* ── HR ───────────────────────────────────────────────────────────────────── */
+hr { border-color: #E8E3DC !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# Version
-APP_VERSION = "v122"
+APP_VERSION = "v123"
 
-# GitHub connection status
 _gh_ok = False
 try:
     from github_storage import github_configured, _repo, _headers
@@ -279,28 +250,29 @@ try:
 except Exception:
     pass
 
-
 _gh_dot   = "🟢" if _gh_ok else "🔴"
 _gh_label = "GitHub connected" if _gh_ok else "GitHub offline"
 
 # ── Sidebar branding ───────────────────────────────────────────────────────
 st.sidebar.markdown(f"""
-<div style='padding:24px 16px 20px; border-bottom:1px solid rgba(200,146,42,0.2); margin-bottom:14px;'>
-    <div style='display:flex; align-items:center; gap:10px; margin-bottom:6px;'>
-        <div style='background:linear-gradient(135deg,#C41230,#9A0E25);
-                    width:36px; height:36px; border-radius:8px;
+<div style='padding:22px 16px 18px; border-bottom:1px solid rgba(247,149,29,0.15); margin-bottom:12px;'>
+    <div style='display:flex; align-items:center; gap:10px; margin-bottom:8px;'>
+        <div style='background:linear-gradient(135deg,#F7951D,#E07B00);
+                    width:38px; height:38px; border-radius:9px;
                     display:flex; align-items:center; justify-content:center;
-                    font-size:20px; box-shadow:0 2px 8px rgba(196,18,48,0.4);'>🍺</div>
+                    font-size:20px; box-shadow:0 2px 10px rgba(247,149,29,0.4);
+                    flex-shrink:0;'>⚡</div>
         <div>
-            <div style='font-size:17px; font-weight:700; color:#F5EFE6; letter-spacing:0.02em;'>
-                AR Suite
-            </div>
-            <div style='font-size:10px; color:#C8922A; font-weight:600; letter-spacing:0.08em; text-transform:uppercase;'>
-                AB InBev · {APP_VERSION}
+            <div style='font-size:17px; font-weight:800; color:#FFFFFF;
+                        letter-spacing:-0.02em; line-height:1.1;'>AR Suite</div>
+            <div style='font-size:10px; color:#F7951D; font-weight:600;
+                        letter-spacing:0.1em; text-transform:uppercase; margin-top:1px;'>
+                AB InBev · Belgium
             </div>
         </div>
     </div>
-    <div style='font-size:11px; color:#A08060; margin-top:8px;'>{_gh_dot} {_gh_label}</div>
+    <div style='font-size:11px; color:#5A5550; margin-top:4px;'>{_gh_dot} {_gh_label}</div>
+    <div style='font-size:10px; color:#3A3530; margin-top:2px;'>{APP_VERSION}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -318,41 +290,28 @@ if "active_page" in st.session_state and st.session_state["active_page"] in PAGE
 else:
     default_idx = 0
 
-page = st.sidebar.radio(
-    "Navigation",
-    PAGES,
-    index=default_idx,
-    label_visibility="collapsed",
-)
-
+page = st.sidebar.radio("Navigation", PAGES, index=default_idx, label_visibility="collapsed")
 st.session_state["active_page"] = page
 
-# ── Bottom sidebar footer ──────────────────────────────────────────────────
 st.sidebar.markdown("""
 <div style='position:fixed; bottom:0; left:0; width:230px;
-            padding:14px 16px; background:#1A0A00;
-            border-top:1px solid rgba(200,146,42,0.2);'>
-    <div style='font-size:10px; color:#7A5030; text-align:center; letter-spacing:0.04em;'>
+            padding:12px 16px; background:#0A0A0A;
+            border-top:1px solid rgba(247,149,29,0.12);'>
+    <div style='font-size:10px; color:#3A3530; text-align:center; letter-spacing:0.05em;'>
         ACCOUNTS RECEIVABLE · BELGIUM
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 if page == "🏠  Home":
-    import page_home
-    page_home.show()
+    import page_home; page_home.show()
 elif page == "🔍  Remittance Reconciliation":
-    import page_remittance
-    page_remittance.show()
+    import page_remittance; page_remittance.show()
 elif page == "📂  Account Splitter":
-    import page_splitter
-    page_splitter.show()
+    import page_splitter; page_splitter.show()
 elif page == "📊  Customer Overview":
-    import page_overview
-    page_overview.show()
+    import page_overview; page_overview.show()
 elif page == "🎁  Bonus & Payout":
-    import page_bonus
-    page_bonus.show()
+    import page_bonus; page_bonus.show()
 elif page == "❓  Help & FAQ":
-    import page_faq
-    page_faq.show()
+    import page_faq; page_faq.show()
