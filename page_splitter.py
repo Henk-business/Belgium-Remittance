@@ -448,8 +448,31 @@ def show():
     _template_manager()
 
 
+def _is_admin() -> bool:
+    """Return True if the current session has authenticated as admin."""
+    return st.session_state.get("_admin_authenticated", False)
+
+
 def _template_manager():
     """Clean GitHub-backed template + rules manager."""
+
+    # ── Admin authentication ──────────────────────────────────────────────────
+    # Delete / replace actions are restricted to the admin.
+    # The admin password is stored in st.secrets["admin"]["password"].
+    # If no password is configured, admin mode is disabled for everyone.
+    _admin_pw = st.secrets.get("admin", {}).get("password", "")
+    if _admin_pw:
+        if not _is_admin():
+            with st.expander("🔐 Admin login (required to delete or replace templates)"):
+                pw_input = st.text_input(
+                    "Admin password", type="password", key="tmgr_pw_input"
+                )
+                if st.button("Unlock", key="tmgr_pw_btn"):
+                    if pw_input == _admin_pw:
+                        st.session_state["_admin_authenticated"] = True
+                        st.rerun()
+                    else:
+                        st.error("Incorrect password.")
 
     st.markdown("""
     <style>
@@ -536,11 +559,11 @@ def _template_manager():
                             help="Download template",
                         )
                 with b2:
-                    if st.button("🔄", key=f"gh_replace_{acc_id}",
+                    if _is_admin() and st.button("🔄", key=f"gh_replace_{acc_id}",
                                  use_container_width=True, help="Replace template"):
                         st.session_state[f"replacing_{acc_id}"] = True
                 with b3:
-                    if st.button("🗑", key=f"gh_del_{acc_id}",
+                    if _is_admin() and st.button("🗑", key=f"gh_del_{acc_id}",
                                  use_container_width=True, help="Delete template"):
                         with st.spinner("Deleting…"):
                             ok, msg = delete_github_template(acc_id)
@@ -550,7 +573,7 @@ def _template_manager():
                         else:
                             st.error(msg)
 
-            if st.session_state.get(f"replacing_{acc_id}"):
+            if _is_admin() and st.session_state.get(f"replacing_{acc_id}"):
                 rep_file = st.file_uploader(
                     f"Upload new template for {acc_id}",
                     type=["xlsx","xls"], key=f"gh_rep_file_{acc_id}",
@@ -595,7 +618,7 @@ def _template_manager():
             except Exception:
                 pass
 
-            if st.button(
+            if _is_admin() and st.button(
                 f"💾  Save template for account {acc_input}",
                 key="gh_tmpl_save", type="primary", use_container_width=True,
             ):
@@ -666,7 +689,7 @@ def _template_manager():
 
             rb1, rb2, rb3 = st.columns(3)
             with rb1:
-                if st.button("💾  Save rule", key="rule_save",
+                if _is_admin() and st.button("💾  Save rule", key="rule_save",
                              type="primary", use_container_width=True):
                     st.session_state[f"rule_{rule_acc}"] = rule_obj
                     try:
@@ -691,7 +714,7 @@ def _template_manager():
                     else:
                         st.error("No rule found in GitHub for this account.")
             with rb3:
-                if existing and st.button("🗑  Delete", key="rule_del",
+                if existing and _is_admin() and st.button("🗑  Delete", key="rule_del",
                                           use_container_width=True):
                     ok, msg = delete_rule_github(rule_acc)
                     if ok:
@@ -724,7 +747,7 @@ def _template_manager():
                             f"{', '.join(accs)}"
                         )
                     with g2:
-                        if st.button("🗑", key=f"del_grp_{primary}",
+                        if _is_admin() and st.button("🗑", key=f"del_grp_{primary}",
                                      use_container_width=True, help="Delete group"):
                             ok, msg = delete_account_group(primary)
                             if ok:
@@ -752,7 +775,7 @@ def _template_manager():
                 help="Use this when all accounts should appear as one combined list",
             )
 
-            if st.button("💾  Save group", key="grp_save", type="primary"):
+            if _is_admin() and st.button("💾  Save group", key="grp_save", type="primary"):
                 accs_list = [a.strip() for a in grp_accs_raw.split(",") if a.strip()]
                 if len(accs_list) < 2:
                     st.error("Enter at least 2 account numbers separated by commas.")
@@ -801,7 +824,7 @@ repo  = "your-username/your-repo-name"
             with ca:
                 st.markdown(f"**Account {acc_id}**")
             with cb:
-                if st.button("Delete", key=f"sess_del_{acc_id}"):
+                if _is_admin() and st.button("Delete", key=f"sess_del_{acc_id}"):
                     _sess_del(st.session_state, acc_id)
                     st.rerun()
         st.download_button(
@@ -822,7 +845,7 @@ repo  = "your-username/your-repo-name"
                 st.caption(f"{info['layout_type']} · {info['max_col']} columns")
             except Exception:
                 pass
-            if st.button("Save", key="sess_save"):
+            if _is_admin() and st.button("Save", key="sess_save"):
                 _sess_save(st.session_state, acc, raw)
                 st.success(f"Saved for account {acc} (this session).")
                 st.rerun()
