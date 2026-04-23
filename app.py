@@ -57,12 +57,12 @@ html, body, [class*="css"] {
     border: 1px solid transparent;
 }
 [data-testid="stSidebar"] .stRadio label:hover {
-    background: rgba(247,149,29,0.12) !important;
-    border-color: rgba(247,149,29,0.2) !important;
+    background: rgba(255,199,44,0.12) !important;
+    border-color: rgba(255,199,44,0.25) !important;
 }
 [data-testid="stSidebar"] .stRadio label:has(input:checked) {
-    background: rgba(247,149,29,0.18) !important;
-    border-color: #F7951D !important;
+    background: rgba(255,199,44,0.18) !important;
+    border-color: #FFC72C !important;
 }
 
 [data-testid="stSidebarNav"] { display: none; }
@@ -255,17 +255,17 @@ _gh_label = "GitHub connected" if _gh_ok else "GitHub offline"
 
 # ── Sidebar branding ───────────────────────────────────────────────────────
 st.sidebar.markdown(f"""
-<div style='padding:22px 16px 18px; border-bottom:1px solid rgba(247,149,29,0.15); margin-bottom:12px;'>
+<div style='padding:22px 16px 18px; border-bottom:1px solid rgba(255,199,44,0.2); margin-bottom:12px;'>
     <div style='display:flex; align-items:center; gap:10px; margin-bottom:8px;'>
-        <div style='background:linear-gradient(135deg,#F7951D,#E07B00);
-                    width:38px; height:38px; border-radius:9px;
+        <div style='background:#FFC72C;
+                    width:40px; height:40px; border-radius:10px;
                     display:flex; align-items:center; justify-content:center;
-                    font-size:20px; box-shadow:0 2px 10px rgba(247,149,29,0.4);
-                    flex-shrink:0;'>⚡</div>
+                    font-size:22px; box-shadow:0 2px 12px rgba(255,199,44,0.35);
+                    flex-shrink:0; line-height:1;'>🍺</div>
         <div>
             <div style='font-size:17px; font-weight:800; color:#FFFFFF;
                         letter-spacing:-0.02em; line-height:1.1;'>AR Suite</div>
-            <div style='font-size:10px; color:#F7951D; font-weight:600;
+            <div style='font-size:10px; color:#FFC72C; font-weight:600;
                         letter-spacing:0.1em; text-transform:uppercase; margin-top:1px;'>
                 AB InBev · Belgium
             </div>
@@ -277,12 +277,12 @@ st.sidebar.markdown(f"""
 """, unsafe_allow_html=True)
 
 PAGES = [
-    "🏠  Home",
-    "🔍  Remittance Reconciliation",
-    "📂  Account Splitter",
-    "📊  Customer Overview",
-    "🎁  Bonus & Payout",
-    "❓  Help & FAQ",
+    "Home",
+    "Remittance Reconciliation",
+    "Account Splitter",
+    "Customer Overview",
+    "Bonus & Payout",
+    "Help & FAQ",
 ]
 
 if "active_page" in st.session_state and st.session_state["active_page"] in PAGES:
@@ -296,22 +296,22 @@ st.session_state["active_page"] = page
 st.sidebar.markdown("""
 <div style='position:fixed; bottom:0; left:0; width:230px;
             padding:12px 16px; background:#0A0A0A;
-            border-top:1px solid rgba(247,149,29,0.12);'>
+            border-top:1px solid rgba(255,199,44,0.1);'>
     <div style='font-size:10px; color:#3A3530; text-align:center; letter-spacing:0.05em;'>
         ACCOUNTS RECEIVABLE · BELGIUM
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-if page == "🏠  Home":
+if page == "Home":
     import page_home; page_home.show()
-elif page == "🔍  Remittance Reconciliation":
+elif page == "Remittance Reconciliation":
     import page_remittance; page_remittance.show()
-elif page == "📂  Account Splitter":
+elif page == "Account Splitter":
     import page_splitter; page_splitter.show()
-elif page == "📊  Customer Overview":
+elif page == "Customer Overview":
     import page_overview; page_overview.show()
-elif page == "🎁  Bonus & Payout":
+elif page == "Bonus & Payout":
     import page_bonus; page_bonus.show()
-elif page == "❓  Help & FAQ":
+elif page == "Help & FAQ":
     import page_faq; page_faq.show()

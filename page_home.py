@@ -19,7 +19,7 @@ def show():
         position: absolute;
         top: 0; left: 0; right: 0;
         height: 3px;
-        background: linear-gradient(90deg, #F7951D, #E07B00, #F7951D);
+        background: linear-gradient(90deg, #FFC72C, #E09A00, #FFC72C);
     }
     /* Abstract geometric pattern */
     .abi-hero::after {
@@ -36,7 +36,7 @@ def show():
         align-items: center;
         gap: 6px;
         background: rgba(247,149,29,0.15);
-        color: #F7951D;
+        color: #FFC72C;
         font-size: 11px;
         font-weight: 700;
         letter-spacing: 0.1em;
@@ -54,7 +54,7 @@ def show():
         line-height: 1.15;
         letter-spacing: -0.03em;
     }
-    .abi-hero-title span { color: #F7951D; }
+    .abi-hero-title span { color: #FFC72C; }
     .abi-hero-sub {
         font-size: 15px;
         color: rgba(255,255,255,0.55);
@@ -79,7 +79,7 @@ def show():
         position: absolute;
         top: 0; left: 0; right: 0;
         height: 3px;
-        background: linear-gradient(90deg, #F7951D, #E07B00);
+        background: linear-gradient(90deg, #FFC72C, #E09A00);
         opacity: 0;
         transition: opacity .2s;
     }
@@ -122,7 +122,7 @@ def show():
     }
     .feat-dot {
         width: 5px; height: 5px;
-        background: #F7951D;
+        background: #FFC72C;
         border-radius: 50%;
         flex-shrink: 0;
         margin-top: 5px;
@@ -149,9 +149,9 @@ def show():
         <div class="tool-card">
             <div class="tool-icon-wrap">
                 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15" stroke="#F7951D" stroke-width="2" stroke-linecap="round"/>
-                    <path d="M9 5C9 3.89543 9.89543 3 11 3H13C14.1046 3 15 3.89543 15 5C15 6.10457 14.1046 7 13 7H11C9.89543 7 9 6.10457 9 5Z" stroke="#F7951D" stroke-width="2"/>
-                    <path d="M9 12L11 14L15 10" stroke="#F7951D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15" stroke="#FFC72C" stroke-width="2" stroke-linecap="round"/>
+                    <path d="M9 5C9 3.89543 9.89543 3 11 3H13C14.1046 3 15 3.89543 15 5C15 6.10457 14.1046 7 13 7H11C9.89543 7 9 6.10457 9 5Z" stroke="#FFC72C" stroke-width="2"/>
+                    <path d="M9 12L11 14L15 10" stroke="#FFC72C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
             </div>
             <div class="tool-name">Remittance Reconciliation</div>
@@ -165,7 +165,7 @@ def show():
         """, unsafe_allow_html=True)
         st.write("")
         if st.button("Open Remittance Tool →", use_container_width=True, key="btn_rem", type="primary"):
-            st.session_state["active_page"] = "🔍  Remittance Reconciliation"
+            st.session_state["active_page"] = "Remittance Reconciliation"
             st.rerun()
 
     with col2:
@@ -173,8 +173,8 @@ def show():
         <div class="tool-card">
             <div class="tool-icon-wrap">
                 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M3 6C3 4.89543 3.89543 4 5 4H9.58579C9.851 4 10.1054 4.10536 10.2929 4.29289L11 5H19C20.1046 5 21 5.89543 21 7V18C21 19.1046 20.1046 20 19 20H5C3.89543 20 3 19.1046 3 18V6Z" stroke="#F7951D" stroke-width="2" stroke-linejoin="round"/>
-                    <path d="M9 13H15M12 10V16" stroke="#F7951D" stroke-width="2" stroke-linecap="round"/>
+                    <path d="M3 6C3 4.89543 3.89543 4 5 4H9.58579C9.851 4 10.1054 4.10536 10.2929 4.29289L11 5H19C20.1046 5 21 5.89543 21 7V18C21 19.1046 20.1046 20 19 20H5C3.89543 20 3 19.1046 3 18V6Z" stroke="#FFC72C" stroke-width="2" stroke-linejoin="round"/>
+                    <path d="M9 13H15M12 10V16" stroke="#FFC72C" stroke-width="2" stroke-linecap="round"/>
                 </svg>
             </div>
             <div class="tool-name">Account Splitter</div>
@@ -188,7 +188,7 @@ def show():
         """, unsafe_allow_html=True)
         st.write("")
         if st.button("Open Account Splitter →", use_container_width=True, key="btn_spl", type="primary"):
-            st.session_state["active_page"] = "📂  Account Splitter"
+            st.session_state["active_page"] = "Account Splitter"
             st.rerun()
 
     st.write("")
@@ -199,10 +199,10 @@ def show():
         <div class="tool-card">
             <div class="tool-icon-wrap">
                 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="3" y="3" width="18" height="18" rx="2" stroke="#F7951D" stroke-width="2"/>
-                    <path d="M3 9H21" stroke="#F7951D" stroke-width="2"/>
-                    <path d="M9 9V21" stroke="#F7951D" stroke-width="2"/>
-                    <path d="M13 13H17M13 17H15" stroke="#F7951D" stroke-width="2" stroke-linecap="round"/>
+                    <rect x="3" y="3" width="18" height="18" rx="2" stroke="#FFC72C" stroke-width="2"/>
+                    <path d="M3 9H21" stroke="#FFC72C" stroke-width="2"/>
+                    <path d="M9 9V21" stroke="#FFC72C" stroke-width="2"/>
+                    <path d="M13 13H17M13 17H15" stroke="#FFC72C" stroke-width="2" stroke-linecap="round"/>
                 </svg>
             </div>
             <div class="tool-name">Customer Overview</div>
@@ -217,7 +217,7 @@ def show():
         """, unsafe_allow_html=True)
         st.write("")
         if st.button("Open Customer Overview →", use_container_width=True, key="btn_ov", type="primary"):
-            st.session_state["active_page"] = "📊  Customer Overview"
+            st.session_state["active_page"] = "Customer Overview"
             st.rerun()
 
     with col4:
@@ -225,11 +225,11 @@ def show():
         <div class="tool-card">
             <div class="tool-icon-wrap">
                 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="#F7951D" stroke-width="2" stroke-linejoin="round"/>
-                    <path d="M12 7V12L14.5 14.5" stroke="#F7951D" stroke-width="1.5" stroke-linecap="round"/>
+                    <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="#FFC72C" stroke-width="2" stroke-linejoin="round"/>
+                    <path d="M12 7V12L14.5 14.5" stroke="#FFC72C" stroke-width="1.5" stroke-linecap="round"/>
                 </svg>
             </div>
-            <div class="tool-name">Bonus &amp; Payout Tools</div>
+            <div class="tool-name">Bonus & Payout Tools</div>
             <p class="tool-desc">Two tools in one: compare SAP accounts against a bonus file to find
                mismatches, or scan for X-payout entries and flag open invoices
                for the payout &amp; block checker.</p>
@@ -241,7 +241,7 @@ def show():
         """, unsafe_allow_html=True)
         st.write("")
         if st.button("Open Bonus Tools →", use_container_width=True, key="btn_bon", type="primary"):
-            st.session_state["active_page"] = "🎁  Bonus & Payout"
+            st.session_state["active_page"] = "Bonus & Payout"
             st.rerun()
 
     # ── Help strip ─────────────────────────────────────────────────────────
@@ -255,7 +255,7 @@ def show():
                         width:32px; height:32px; display:flex; align-items:center;
                         justify-content:center; font-size:15px; flex-shrink:0;">❓</div>
             <div style="font-size:13px; color:rgba(255,255,255,0.7);">
-                New here? The <strong style="color:#F7951D;">Help &amp; FAQ</strong>
+                New here? The <strong style="color:#FFC72C;">Help &amp; FAQ</strong>
                 page has step-by-step guides for every tool.
             </div>
         </div>
