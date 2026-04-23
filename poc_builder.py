@@ -126,11 +126,14 @@ def _load_poc_names(template_bytes: bytes) -> dict:
 
 
 def build_poc_sheet(acc_df: pd.DataFrame, account_id: str,
-                    template_bytes: bytes = None, today=None) -> bytes:
+                    template_bytes: bytes = None, today=None,
+                    lang: str = "en") -> bytes:
     """Build a POC-grouped Excel sheet matching the NEGOBOISSONS template."""
     if today is None:
         today = datetime.date.today()
     acc_df = _recalc_arrears_df(acc_df, today)
+    from splitter_engine import translate_doc_types
+    acc_df = translate_doc_types(acc_df, lang)
 
     # ── Load POC names from template ──────────────────────────────────────────
     poc_names = _load_poc_names(template_bytes) if template_bytes else {}
@@ -153,6 +156,8 @@ def build_poc_sheet(acc_df: pd.DataFrame, account_id: str,
     # ── Identify date columns (1-based positions) ─────────────────────────────
     date_col_names = set()
     for col in acc_df.columns:
+        if "arrears" in col.lower():
+            continue
         if any(kw in col.lower() for kw in ["date", "datum"]):
             date_col_names.add(col)
         elif pd.api.types.is_datetime64_any_dtype(acc_df[col]):
@@ -251,7 +256,8 @@ def build_poc_sheet(acc_df: pd.DataFrame, account_id: str,
 
         # Cols B onwards: column headers (grey fill)
         for ci, col_name in enumerate(show_cols, 2):
-            _w(ws, r, ci, col_name, bold=False, fill=GREY_HDR, size=10, ha="center")
+            display = "Description" if "document type" in str(col_name).lower() else col_name
+            _w(ws, r, ci, display, bold=False, fill=GREY_HDR, size=10, ha="center")
 
         r += 1
 

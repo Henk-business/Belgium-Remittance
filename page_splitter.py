@@ -345,7 +345,7 @@ def show():
         try:
             if rule and rule.get("chunk_size", 0) > 0:
                 # Chunked account (e.g. 40k batches)
-                acc_wb_bytes = build_chunked_sheet(acc_df_sel, str(acc), rule, today=ref_date)
+                acc_wb_bytes = build_chunked_sheet(acc_df_sel, str(acc), rule, today=ref_date, lang=dl_lang)
                 layout_label = f"✓ chunked €{rule.get('chunk_size',0):,.0f}"
 
             elif str(acc) in CHUNKED_ACCOUNTS:
@@ -369,7 +369,7 @@ def show():
                 except Exception:
                     is_poc = False
                 if is_poc:
-                    acc_wb_bytes = build_poc_sheet(acc_df_sel, str(acc), tmpl_bytes, today=ref_date)
+                    acc_wb_bytes = build_poc_sheet(acc_df_sel, str(acc), tmpl_bytes, today=ref_date, lang=dl_lang)
                     layout_label = '✓ POC grouped'
                 else:
                     acc_wb_bytes = build_template_sheet(

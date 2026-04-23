@@ -68,7 +68,8 @@ def _cell(ws, row, col, val=None, bold=False, bg=WHITE, fg="000000",
 
 def _hdr_row(ws, row, headers, ncols):
     for ci, h in enumerate(headers, 1):
-        c = ws.cell(row=row, column=ci, value=h)
+        display = "Description" if "document type" in str(h).lower() else h
+        c = ws.cell(row=row, column=ci, value=display)
         c.font      = Font(name="Arial", bold=True, color=WHITE, size=9)
         c.fill      = PatternFill("solid", fgColor=DK_BLUE)
         c.alignment = Alignment(horizontal="center", vertical="center")
@@ -170,13 +171,15 @@ def _chunk_rows(df, amount_col, chunk_size):
 
 
 def build_chunked_sheet(acc_df: pd.DataFrame, account_id: str,
-                        rule: dict, today=None) -> bytes:
+                        rule: dict, today=None, lang: str = "en") -> bytes:
     """
     Build a single-account Excel workbook applying the customer's rules.
     """
     if today is None:
         today = datetime.date.today()
     acc_df = _recalc_arrears_df(acc_df, today)
+    from splitter_engine import translate_doc_types
+    acc_df = translate_doc_types(acc_df, lang)
     today_str = pd.Timestamp(today).strftime("%d/%m/%Y")
 
     # ── Apply column selection ────────────────────────────────────────────────
@@ -234,6 +237,8 @@ def build_chunked_sheet(acc_df: pd.DataFrame, account_id: str,
     # ── Identify date columns ─────────────────────────────────────────────────
     date_cols = set()
     for ci, col_name in enumerate(headers, 1):
+        if "arrears" in col_name.lower():
+            continue
         if any(kw in col_name.lower() for kw in ["date", "datum"]):
             date_cols.add(ci)
         elif pd.api.types.is_datetime64_any_dtype(df[col_name]):

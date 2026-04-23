@@ -168,7 +168,8 @@ def _write_account_sheet(wb, ws, acc_id: str, acc_df: pd.DataFrame,
 
     # ── Column headers ────────────────────────────────────────────────────────
     for ci, col_name in enumerate(data_cols, 1):
-        cell = ws.cell(row=header_row, column=ci, value=col_name)
+        display_name = "Description" if "document type" in str(col_name).lower() else col_name
+        cell = ws.cell(row=header_row, column=ci, value=display_name)
         cell.font      = _font(bold=True, color=WHITE, size=9)
         cell.fill      = _fill(MD_BLUE)
         cell.alignment = _align("center")
@@ -192,9 +193,11 @@ def _write_account_sheet(wb, ws, acc_id: str, acc_df: pd.DataFrame,
     amt_ci = next((ci for ci, col in col_map.items()
                    if amount_col and col == amount_col), None)
     date_cols_ci = {ci for ci, col in col_map.items()
-                    if any(kw in col.lower() for kw in ["date","datum"])
-                    or (col in acc_df.columns and
-                        pd.api.types.is_datetime64_any_dtype(acc_df[col]))}
+                    if "arrears" not in col.lower() and (
+                        any(kw in col.lower() for kw in ["date","datum"])
+                        or (col in acc_df.columns and
+                            pd.api.types.is_datetime64_any_dtype(acc_df[col]))
+                    )}
 
     # ── Data rows ─────────────────────────────────────────────────────────────
     for di, (_, row_data) in enumerate(acc_df.iterrows()):
@@ -276,6 +279,9 @@ def build_merged_workbook(account_dfs: dict, template_bytes: bytes,
     account_dfs = {acc: _recalc_arrears_df(df, today) for acc, df in account_dfs.items()}
     today_str = pd.Timestamp(today).strftime("%d/%m/%Y")
 
+    from splitter_engine import translate_doc_types
+    account_dfs = {acc: translate_doc_types(df, lang) for acc, df in account_dfs.items()}
+
     if not template_bytes:
         raise ValueError("No template provided — upload a template for the primary account first.")
     tmpl_info = _read_template_structure(template_bytes)
@@ -338,8 +344,10 @@ def build_flat_workbook(account_dfs: dict, amount_col: str,
     ncols = len(combined.columns)
 
     date_col_names = {c for c in combined.columns
-                      if any(k in c.lower() for k in ["date","datum"])
-                      or pd.api.types.is_datetime64_any_dtype(combined[c])}
+                      if "arrears" not in c.lower() and (
+                          any(k in c.lower() for k in ["date","datum"])
+                          or pd.api.types.is_datetime64_any_dtype(combined[c])
+                      )}
     amt_ci = (list(combined.columns).index(amt_ci_raw) + 1) if amt_ci_raw else None
 
     wb = openpyxl.Workbook()
@@ -373,7 +381,8 @@ def build_flat_workbook(account_dfs: dict, amount_col: str,
 
     # Row 4: column headers
     for ci, col in enumerate(combined.columns, 1):
-        cell = ws.cell(row=4, column=ci, value=col)
+        display_name = "Description" if "document type" in str(col).lower() else col
+        cell = ws.cell(row=4, column=ci, value=display_name)
         cell.font      = _font(bold=True, color=WHITE, size=9)
         cell.fill      = _fill(MD_BLUE)
         cell.alignment = _align("center")
