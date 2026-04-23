@@ -9,12 +9,13 @@ from common import get_email, mailto_link, LANG_LABELS, detect_customer_name
 
 
 def show():
-    st.markdown("## 📊 Customer Overview")
-    st.caption(
-        "Generate a year-by-year breakdown for a customer. "
-        "Each year shows all clearing groups with their transactions, "
-        "sorted newest to oldest by net due date."
-    )
+    try:
+        from abi_ui import page_header, section_header
+        page_header("Customer Overview",
+                    "Year-by-year or current-period breakdown grouped by clearing document.",
+                    "📊")
+    except ImportError:
+        st.markdown("## 📊 Customer Overview")
 
     # ── Clear stale session keys from older versions ──────────────────────────
     for _old_key in ("ov_remove_nd", "ov_remove_nd_v1", "ov_remove_nd2"):
@@ -22,7 +23,10 @@ def show():
             del st.session_state[_old_key]
 
     # ── UPLOAD ────────────────────────────────────────────────────────────────
-    st.markdown("### 1 · Upload SAP export")
+    try:
+        from abi_ui import section_header
+        section_header("1","Upload SAP export")
+    except: st.markdown("### 1 · Upload SAP export")
     uploaded = st.file_uploader(
         "SAP Export — FBL5N full history (.xlsx)",
         type=["xlsx","xls"],
@@ -99,7 +103,10 @@ def show():
     )
 
     # ── SETTINGS ──────────────────────────────────────────────────────────────
-    st.markdown("### 2 · Settings")
+    try:
+        from abi_ui import section_header
+        section_header("2","Settings")
+    except: st.markdown("### 2 · Settings")
 
     # Mode: single year (current overview) vs multi-year
     mode_col, _ = st.columns([2,3])
@@ -215,7 +222,10 @@ def show():
         st.caption(f"Will generate {n_years} year section(s) on one sheet.")
 
     # ── GENERATE ──────────────────────────────────────────────────────────────
-    st.markdown("### 3 · Generate")
+    try:
+        from abi_ui import section_header
+        section_header("3","Generate")
+    except: st.markdown("### 3 · Generate")
     gen_col, _ = st.columns([1, 2])
     with gen_col:
         generate = st.button(

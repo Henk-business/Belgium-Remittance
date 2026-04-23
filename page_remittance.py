@@ -11,8 +11,13 @@ from common import get_email, LANG_LABELS, mailto_link
 
 
 def show():
-    st.markdown("## 🔍 Remittance Reconciliation")
-    st.caption("Upload a SAP export and a client remittance. SAP is the source of truth.")
+    try:
+        from abi_ui import page_header
+        page_header("Remittance Reconciliation",
+                    "Match a client remittance against your SAP open items. SAP is the source of truth.",
+                    "🔍")
+    except ImportError:
+        st.markdown("## 🔍 Remittance Reconciliation")
 
     tab1, tab2 = st.tabs(["📄 Remittance matching", "💰 Amount-only matching"])
 

@@ -1,52 +1,272 @@
 import streamlit as st
 
 st.set_page_config(
-    page_title="AR Suite",
-    page_icon="💼",
+    page_title="AR Suite · AB InBev",
+    page_icon="🍺",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
+# ── AB InBev brand palette ──────────────────────────────────────────────────
+# Primary: Deep Crimson, Gold, Near-Black, White
+# Crimson  #C41230   Gold     #C8922A   Dark   #1A0A00   Warm grey #F5F0EB
+
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
-[data-testid="stSidebar"] {
-    background: #0f172a !important;
-    min-width: 220px;
+/* ── Global ───────────────────────────────────────────────────────────────── */
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+    background-color: #FAF7F4;
 }
 
-/* White text for all sidebar content */
-[data-testid="stSidebar"] .stRadio label p,
-[data-testid="stSidebar"] .stRadio label span,
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #1A0A00 0%, #2D1005 60%, #1A0A00 100%) !important;
+    min-width: 230px;
+    border-right: 1px solid rgba(200,146,42,0.2);
+}
+
+/* Sidebar logo area */
+[data-testid="stSidebar"]::before {
+    content: "";
+    display: block;
+    height: 4px;
+    background: linear-gradient(90deg, #C41230, #C8922A, #C41230);
+    margin-bottom: 0;
+}
+
+/* Sidebar text */
 [data-testid="stSidebar"] label,
 [data-testid="stSidebar"] p,
-[data-testid="stSidebar"] span {
-    color: #f1f5f9 !important;
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] .stRadio label p,
+[data-testid="stSidebar"] .stRadio label span {
+    color: #F5EFE6 !important;
+    font-size: 13px;
 }
 
-[data-testid="stSidebar"] .stRadio > div { gap: 4px; }
+/* Sidebar nav items */
+[data-testid="stSidebar"] .stRadio > div { gap: 3px; }
 [data-testid="stSidebar"] .stRadio label {
     background: rgba(255,255,255,0.04);
     border-radius: 8px;
-    padding: 8px 12px !important;
-    margin: 2px 0;
+    padding: 9px 14px !important;
+    margin: 1px 0;
     cursor: pointer;
-    transition: background .15s;
+    transition: all .18s ease;
+    border: 1px solid transparent;
 }
 [data-testid="stSidebar"] .stRadio label:hover {
-    background: rgba(255,255,255,0.12) !important;
+    background: rgba(196,18,48,0.18) !important;
+    border-color: rgba(196,18,48,0.3) !important;
+}
+[data-testid="stSidebar"] .stRadio label[data-checked="true"],
+[data-testid="stSidebar"] .stRadio label:has(input:checked) {
+    background: rgba(196,18,48,0.25) !important;
+    border-color: #C41230 !important;
 }
 
+/* Hide default nav */
 [data-testid="stSidebarNav"] { display: none; }
-.block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
+
+/* ── Main layout ──────────────────────────────────────────────────────────── */
+.block-container {
+    padding-top: 1.8rem;
+    padding-bottom: 2rem;
+    max-width: 1200px;
+}
 #MainMenu, footer { visibility: hidden; }
+
+/* ── Page headers (h1, h2) ────────────────────────────────────────────────── */
+h1, h2 { color: #1A0A00 !important; font-weight: 700 !important; }
+h3 { color: #2D1005 !important; font-weight: 600 !important; }
+
+/* ── Streamlit headings via markdown ──────────────────────────────────────── */
+.stMarkdown h2 { 
+    border-bottom: 2px solid #C41230; 
+    padding-bottom: 6px; 
+    margin-bottom: 16px;
+}
+.stMarkdown h3 {
+    color: #C41230 !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 20px;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.stButton > button {
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    transition: all .18s ease;
+    border: none;
+}
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #C41230, #9A0E25) !important;
+    color: white !important;
+    box-shadow: 0 2px 8px rgba(196,18,48,0.3);
+}
+.stButton > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #D91535, #C41230) !important;
+    box-shadow: 0 4px 14px rgba(196,18,48,0.4);
+    transform: translateY(-1px);
+}
+.stButton > button[kind="secondary"] {
+    background: white !important;
+    color: #1A0A00 !important;
+    border: 1px solid #D4C5B5 !important;
+}
+.stButton > button[kind="secondary"]:hover {
+    border-color: #C41230 !important;
+    color: #C41230 !important;
+}
+
+/* ── File uploader ────────────────────────────────────────────────────────── */
+[data-testid="stFileUploader"] {
+    border: 2px dashed #D4C5B5;
+    border-radius: 10px;
+    background: white;
+    transition: border-color .2s;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color: #C41230;
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────────── */
+.stTabs [data-baseweb="tab-list"] {
+    background: transparent;
+    border-bottom: 2px solid #E8DDD0;
+    gap: 0;
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 8px 8px 0 0;
+    padding: 8px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #6B5744;
+    border: none;
+    background: transparent;
+}
+.stTabs [aria-selected="true"] {
+    color: #C41230 !important;
+    font-weight: 700 !important;
+    border-bottom: 3px solid #C41230 !important;
+    background: rgba(196,18,48,0.04) !important;
+}
+
+/* ── Expanders ────────────────────────────────────────────────────────────── */
+[data-testid="stExpander"] {
+    border: 1px solid #E8DDD0;
+    border-radius: 10px;
+    background: white;
+    box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    margin-bottom: 8px;
+}
+[data-testid="stExpander"] summary {
+    font-weight: 600;
+    color: #1A0A00;
+    padding: 12px 16px;
+}
+
+/* ── Info / success / warning / error boxes ───────────────────────────────── */
+[data-testid="stAlert"] {
+    border-radius: 10px;
+    border-left-width: 4px;
+}
+
+/* ── Metrics ──────────────────────────────────────────────────────────────── */
+[data-testid="stMetric"] {
+    background: white;
+    border-radius: 10px;
+    padding: 12px 16px;
+    border: 1px solid #E8DDD0;
+    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+}
+[data-testid="stMetricValue"] { color: #C41230 !important; font-weight: 700 !important; }
+
+/* ── Selectbox / text inputs ──────────────────────────────────────────────── */
+[data-testid="stSelectbox"] > div > div,
+[data-testid="stTextInput"] > div > div > input,
+[data-testid="stNumberInput"] > div > div > input,
+[data-testid="stTextArea"] > div > div > textarea,
+[data-testid="stDateInput"] > div > div > input {
+    border-radius: 8px;
+    border: 1px solid #D4C5B5;
+    background: white;
+}
+[data-testid="stTextInput"] > div > div > input:focus {
+    border-color: #C41230;
+    box-shadow: 0 0 0 2px rgba(196,18,48,0.12);
+}
+
+/* ── Dataframe / table ────────────────────────────────────────────────────── */
+[data-testid="stDataFrame"] {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #E8DDD0;
+}
+
+/* ── Download button ──────────────────────────────────────────────────────── */
+[data-testid="stDownloadButton"] > button {
+    background: white !important;
+    color: #C41230 !important;
+    border: 2px solid #C41230 !important;
+    border-radius: 8px;
+    font-weight: 600;
+    transition: all .18s;
+}
+[data-testid="stDownloadButton"] > button:hover {
+    background: #C41230 !important;
+    color: white !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(196,18,48,0.3);
+}
+
+/* ── Checkbox ─────────────────────────────────────────────────────────────── */
+[data-testid="stCheckbox"] span[aria-checked="true"] {
+    background: #C41230 !important;
+    border-color: #C41230 !important;
+}
+
+/* ── Spinner ──────────────────────────────────────────────────────────────── */
+[data-testid="stSpinner"] > div {
+    border-top-color: #C41230 !important;
+}
+
+/* ── Progress bar ─────────────────────────────────────────────────────────── */
+[data-testid="stProgressBar"] > div {
+    background: linear-gradient(90deg, #C41230, #C8922A) !important;
+    border-radius: 4px;
+}
+
+/* ── Divider ──────────────────────────────────────────────────────────────── */
+hr { border-color: #E8DDD0 !important; }
+
+/* ── Caption / small text ─────────────────────────────────────────────────── */
+.stCaption, small { color: #7A6555 !important; font-size: 12px; }
+
+/* ── Radio buttons ────────────────────────────────────────────────────────── */
+[data-testid="stRadio"] label[data-checked="true"] span {
+    background: #C41230 !important;
+    border-color: #C41230 !important;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #F5F0EB; }
+::-webkit-scrollbar-thumb { background: #C8922A; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #C41230; }
 </style>
 """, unsafe_allow_html=True)
 
 # Version
-APP_VERSION = "v82"
+APP_VERSION = "v122"
 
 # GitHub connection status
 _gh_ok = False
@@ -59,16 +279,28 @@ try:
 except Exception:
     pass
 
+
 _gh_dot   = "🟢" if _gh_ok else "🔴"
 _gh_label = "GitHub connected" if _gh_ok else "GitHub offline"
 
+# ── Sidebar branding ───────────────────────────────────────────────────────
 st.sidebar.markdown(f"""
-<div style='padding:20px 12px 20px; border-bottom:1px solid #1e293b; margin-bottom:12px;'>
-    <div style='font-size:20px; font-weight:700; color:#f1f5f9;'>💼 AR Suite
-        <span style='font-size:11px; font-weight:400; color:#64748b; margin-left:6px;'>{APP_VERSION}</span>
+<div style='padding:24px 16px 20px; border-bottom:1px solid rgba(200,146,42,0.2); margin-bottom:14px;'>
+    <div style='display:flex; align-items:center; gap:10px; margin-bottom:6px;'>
+        <div style='background:linear-gradient(135deg,#C41230,#9A0E25);
+                    width:36px; height:36px; border-radius:8px;
+                    display:flex; align-items:center; justify-content:center;
+                    font-size:20px; box-shadow:0 2px 8px rgba(196,18,48,0.4);'>🍺</div>
+        <div>
+            <div style='font-size:17px; font-weight:700; color:#F5EFE6; letter-spacing:0.02em;'>
+                AR Suite
+            </div>
+            <div style='font-size:10px; color:#C8922A; font-weight:600; letter-spacing:0.08em; text-transform:uppercase;'>
+                AB InBev · {APP_VERSION}
+            </div>
+        </div>
     </div>
-    <div style='font-size:11px; color:#475569; margin-top:4px;'>Accounts Receivable Tools</div>
-    <div style='font-size:11px; color:#475569; margin-top:6px;'>{_gh_dot} {_gh_label}</div>
+    <div style='font-size:11px; color:#A08060; margin-top:8px;'>{_gh_dot} {_gh_label}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -94,6 +326,17 @@ page = st.sidebar.radio(
 )
 
 st.session_state["active_page"] = page
+
+# ── Bottom sidebar footer ──────────────────────────────────────────────────
+st.sidebar.markdown("""
+<div style='position:fixed; bottom:0; left:0; width:230px;
+            padding:14px 16px; background:#1A0A00;
+            border-top:1px solid rgba(200,146,42,0.2);'>
+    <div style='font-size:10px; color:#7A5030; text-align:center; letter-spacing:0.04em;'>
+        ACCOUNTS RECEIVABLE · BELGIUM
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 if page == "🏠  Home":
     import page_home
