@@ -130,7 +130,7 @@ def show():
     </style>
 
     <!-- Hero -->
-    <div class="abi-hero">
+    <div class="abi-hero" style="margin-top:20px;">
         <div class="abi-badge">⚡ AB InBev · Belgium · AR Team</div>
         <div class="abi-hero-title">Accounts <span>Receivable</span> Suite</div>
         <p class="abi-hero-sub">

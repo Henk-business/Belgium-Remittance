@@ -69,9 +69,16 @@ html, body, [class*="css"] {
 
 /* ── Main layout ──────────────────────────────────────────────────────────── */
 .block-container {
-    padding-top: 1.2rem !important;
+    padding-top: 0rem !important;
     padding-bottom: 2rem;
     max-width: 1200px;
+}
+/* Streamlit also injects padding via these selectors — zero them all */
+section.main > div.block-container {
+    padding-top: 0rem !important;
+}
+[data-testid="block-container"] {
+    padding-top: 0rem !important;
 }
 #MainMenu, footer { visibility: hidden; }
 

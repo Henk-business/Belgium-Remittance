@@ -6,11 +6,10 @@ import streamlit as st
 
 
 def page_header(title: str, subtitle: str, icon: str = ""):
-    """Render a consistent branded page header — never clipped."""
+    """Render a consistent branded page header."""
     st.markdown(f"""
     <div style="display:flex; align-items:center; gap:14px;
-                margin-top:-0.5rem;
-                padding:14px 0 16px 0;
+                padding:20px 0 16px 0;
                 border-bottom:2px solid #F0EDE8;
                 margin-bottom:22px;">
         <div style="background:#FFC72C;
