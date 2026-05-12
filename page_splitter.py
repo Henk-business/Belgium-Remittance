@@ -136,7 +136,36 @@ def show():
     with c1:
         remove_not_due = st.checkbox("Remove invoices not yet due", value=True, key="spl_remove")
     with c2:
-        ref_date = st.date_input("Reference date", value=datetime.date.today(), key="spl_refdate")
+        ref_date = st.date_input("Reference date (global)", value=datetime.date.today(), key="spl_refdate")
+
+    # ── Per-account date overrides ─────────────────────────────────────────
+    # Only shown when remove_not_due is ticked and there are multiple accounts
+    per_account_dates = {}
+    if remove_not_due and len(accounts) > 1:
+        with st.expander(
+            f"⚙️ Per-account date overrides — override the reference date for individual accounts",
+            expanded=False,
+        ):
+            st.caption(
+                "Each account defaults to the global reference date above. "
+                "Override here if a specific account needs a different cut-off "
+                "(e.g. month-end date varies per customer)."
+            )
+            # Render in rows of 3
+            for i in range(0, len(accounts), 3):
+                row_accounts = accounts[i:i+3]
+                cols = st.columns(len(row_accounts))
+                for col, acc in zip(cols, row_accounts):
+                    with col:
+                        override = st.date_input(
+                            f"`{acc}`",
+                            value=ref_date,
+                            key=f"spl_acc_date_{acc}",
+                            help=f"Reference date for account {acc}. "
+                                 f"Defaults to global date {ref_date}."
+                        )
+                        if override != ref_date:
+                            per_account_dates[str(acc)] = override
 
     # ── GENERATE ──────────────────────────────────────────────────────────────
     try:
@@ -167,13 +196,15 @@ def show():
                         df_raw, account_col, amount_col, due_date_col,
                         remove_not_due=remove_not_due,
                         reference_date=ref_date,
+                        per_account_dates=per_account_dates,
                     )
                     # Build the combined workbook — standard layout for all accounts.
                     wb_bytes = build_split_workbook(account_data, amount_col, today=ref_date)
-                    st.session_state["spl_result"]       = wb_bytes
-                    st.session_state["spl_account_data"] = account_data
-                    st.session_state["spl_ref_date"]     = ref_date
-                    st.session_state["spl_amount_col"]   = amount_col
+                    st.session_state["spl_result"]           = wb_bytes
+                    st.session_state["spl_account_data"]     = account_data
+                    st.session_state["spl_ref_date"]         = ref_date
+                    st.session_state["spl_amount_col"]       = amount_col
+                    st.session_state["spl_per_acc_dates"]    = per_account_dates
                     # Pre-fetch which accounts have templates so we can show a notice
                     has_templates = []
                     for acc_check in account_data.keys():
@@ -197,6 +228,7 @@ def show():
     account_data = st.session_state["spl_account_data"]
     ref_date     = st.session_state["spl_ref_date"]
     amount_col   = st.session_state["spl_amount_col"]
+    per_acc_dates = st.session_state.get("spl_per_acc_dates", {})
     today_str    = pd.Timestamp(ref_date).strftime("%d/%m/%Y")
     safe_date    = str(ref_date).replace("-", "")
 
@@ -206,11 +238,18 @@ def show():
     summary_rows = []
     for acc, acc_df in account_data.items():
         total = acc_df[amount_col].sum() if amount_col and amount_col in acc_df.columns else None
+        acc_date = per_acc_dates.get(str(acc), ref_date)
+        acc_date_str = pd.Timestamp(acc_date).strftime("%d/%m/%Y")
+        date_label = f"{acc_date_str} ⚙" if str(acc) in per_acc_dates else acc_date_str
         summary_rows.append({
-            "Account": acc, "Lines": len(acc_df),
+            "Account": acc,
+            "Reference date": date_label,
+            "Lines": len(acc_df),
             "Total (€)": f"{total:,.2f}" if total is not None else "—",
         })
     st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+    if per_acc_dates:
+        st.caption("⚙ = per-account date override applied")
 
     # ── SECTION 1: DOWNLOADS ────────────────────────────────────────
     st.markdown("---")

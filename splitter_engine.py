@@ -120,10 +120,15 @@ def save_config(state, account_id, config):
 
 def split_accounts(df, account_col, amount_col, due_date_col,
                    remove_not_due=True, reference_date=None,
-                   customer_configs=None):
+                   customer_configs=None, per_account_dates=None):
+    """
+    per_account_dates: optional dict {account_id: datetime.date} — lets each
+    account use its own reference date instead of the global one.
+    """
     if reference_date is None:
         reference_date = datetime.date.today()
     ref_ts = pd.Timestamp(reference_date)
+    per_account_dates = per_account_dates or {}
 
     # ── Strip SAP-inserted subtotal/summary rows FIRST
     # Real transactions always have a Document Number. Rows without one are
@@ -151,10 +156,13 @@ def split_accounts(df, account_col, amount_col, due_date_col,
         mask = df[account_col].apply(clean_id) == acc
         acc_df = df[mask].copy()
 
+        # Use per-account date if provided, otherwise fall back to global ref_date
+        acc_ref = pd.Timestamp(per_account_dates.get(str(acc), reference_date))
+
         # ── Remove invoices not yet due so total reflects only displayed rows
         if remove_not_due and due_date_col and due_date_col in acc_df.columns:
             due = pd.to_datetime(acc_df[due_date_col], errors="coerce")
-            acc_df = acc_df[due.isna() | (due <= ref_ts)].copy()
+            acc_df = acc_df[due.isna() | (due <= acc_ref)].copy()
 
         # ── Strip unwanted SAP columns
         cols_to_drop = [col for col in acc_df.columns if col in STRIP_COLS]
