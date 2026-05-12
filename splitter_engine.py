@@ -156,12 +156,6 @@ def split_accounts(df, account_col, amount_col, due_date_col,
             due = pd.to_datetime(acc_df[due_date_col], errors="coerce")
             acc_df = acc_df[due.isna() | (due <= ref_ts)].copy()
 
-        # ── Filter to current year only (year of reference_date)
-        # Prevents multi-year exports from including historical years
-        if due_date_col and due_date_col in acc_df.columns:
-            due_yr = pd.to_datetime(acc_df[due_date_col], errors="coerce").dt.year
-            acc_df = acc_df[due_yr.isna() | (due_yr == ref_ts.year)].copy()
-
         # ── Strip unwanted SAP columns
         cols_to_drop = [col for col in acc_df.columns if col in STRIP_COLS]
         if cols_to_drop:
