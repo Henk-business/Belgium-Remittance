@@ -140,32 +140,36 @@ def show():
 
     # ── Per-account date overrides ─────────────────────────────────────────
     # Only shown when remove_not_due is ticked and there are multiple accounts
-    per_account_dates = {}
     if remove_not_due and len(accounts) > 1:
         with st.expander(
-            f"⚙️ Per-account date overrides — override the reference date for individual accounts",
+            f"⚙️ Per-account date overrides — set a different cut-off date per account",
             expanded=False,
         ):
             st.caption(
                 "Each account defaults to the global reference date above. "
-                "Override here if a specific account needs a different cut-off "
-                "(e.g. month-end date varies per customer)."
+                "Change individual accounts if they need a different cut-off."
             )
-            # Render in rows of 3
             for i in range(0, len(accounts), 3):
                 row_accounts = accounts[i:i+3]
                 cols = st.columns(len(row_accounts))
                 for col, acc in zip(cols, row_accounts):
                     with col:
-                        override = st.date_input(
+                        st.date_input(
                             f"`{acc}`",
-                            value=ref_date,
+                            value=st.session_state.get(f"spl_acc_date_{acc}", ref_date),
                             key=f"spl_acc_date_{acc}",
-                            help=f"Reference date for account {acc}. "
-                                 f"Defaults to global date {ref_date}."
+                            help=f"Cut-off date for account {acc}.",
                         )
-                        if override != ref_date:
-                            per_account_dates[str(acc)] = override
+
+    # Build per_account_dates from session_state — reliable at generate time
+    # regardless of whether the expander was open or closed
+    per_account_dates = {}
+    if remove_not_due:
+        for acc in accounts:
+            key = f"spl_acc_date_{acc}"
+            val = st.session_state.get(key, ref_date)
+            if val != ref_date:
+                per_account_dates[str(acc)] = val
 
     # ── GENERATE ──────────────────────────────────────────────────────────────
     try:
