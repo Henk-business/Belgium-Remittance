@@ -245,17 +245,22 @@ hr { border-color: #E8E3DC !important; }
 </style>
 """, unsafe_allow_html=True)
 
-APP_VERSION = "v123"
+APP_VERSION = "v130"
 
-_gh_ok = False
-try:
-    from github_storage import github_configured, _repo, _headers
-    import requests as _req
-    if github_configured():
-        _r = _req.get(f"https://api.github.com/repos/{_repo()}", headers=_headers(), timeout=5)
-        _gh_ok = _r.ok
-except Exception:
-    pass
+@st.cache_data(ttl=300, show_spinner=False)
+def _check_github():
+    """Check GitHub connectivity once per 5 minutes, not on every rerun."""
+    try:
+        from github_storage import github_configured, _repo, _headers
+        import requests as _req
+        if not github_configured():
+            return False
+        r = _req.get(f"https://api.github.com/repos/{_repo()}", headers=_headers(), timeout=4)
+        return r.ok
+    except Exception:
+        return False
+
+_gh_ok = _check_github()
 
 _gh_dot   = "🟢" if _gh_ok else "🔴"
 _gh_label = "GitHub connected" if _gh_ok else "GitHub offline"
@@ -292,12 +297,18 @@ PAGES = [
     "Help & FAQ",
 ]
 
-if "active_page" in st.session_state and st.session_state["active_page"] in PAGES:
-    default_idx = PAGES.index(st.session_state["active_page"])
-else:
-    default_idx = 0
+# Initialise nav key in session_state if missing
+if "nav_page" not in st.session_state:
+    st.session_state["nav_page"] = st.session_state.get("active_page", PAGES[0])
+if st.session_state.get("nav_page") not in PAGES:
+    st.session_state["nav_page"] = PAGES[0]
 
-page = st.sidebar.radio("Navigation", PAGES, index=default_idx, label_visibility="collapsed")
+# If a page button set active_page, sync it to nav_page before the radio renders
+if "active_page" in st.session_state and st.session_state["active_page"] != st.session_state.get("nav_page"):
+    st.session_state["nav_page"] = st.session_state["active_page"]
+
+page = st.sidebar.radio("Navigation", PAGES, key="nav_page", label_visibility="collapsed")
+# Keep active_page in sync so home page buttons still work
 st.session_state["active_page"] = page
 
 st.sidebar.markdown("""

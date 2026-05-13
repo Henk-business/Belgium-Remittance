@@ -53,21 +53,15 @@ def _find(df, candidates):
 
 
 def show():
-    try:
-        from abi_ui import page_header, section_header
-        page_header("Account Splitter", 
-                    "Split a multi-account SAP export into one sheet per customer — with custom templates.",
-                    "📂")
-    except ImportError:
-        st.markdown("## 📂 Account Splitter")
+    from abi_ui import page_header, section_header
+    page_header("Account Splitter",
+                "Split a multi-account SAP export into one sheet per customer — with custom templates.",
+                "📂")
 
 
 
     # ── UPLOAD ────────────────────────────────────────────────────────────────
-    try:
-        from abi_ui import section_header
-        section_header("1","Upload SAP export")
-    except: st.markdown("### 1 · Upload SAP export")
+    section_header("1","Upload SAP export")
     st.markdown("**SAP Multi-Account Export** — FBL5N or any open items report (.xlsx)")
     uploaded = st.file_uploader(
         "SAP export", type=["xlsx", "xls"],
@@ -95,10 +89,7 @@ def show():
         st.error("Could not detect an account column. Use the override below.")
 
     # ── SETTINGS ──────────────────────────────────────────────────────────────
-    try:
-        from abi_ui import section_header
-        section_header("2","Confirm settings")
-    except: st.markdown("### 2 · Confirm settings")
+    section_header("2","Confirm settings")
 
     with st.expander("Column detection — click to override if needed"):
         col_opts = df_raw.columns.tolist()
@@ -172,10 +163,7 @@ def show():
                 per_account_dates[str(acc)] = val
 
     # ── GENERATE ──────────────────────────────────────────────────────────────
-    try:
-        from abi_ui import section_header
-        section_header("3","Generate")
-    except: st.markdown("### 3 · Generate")
+    section_header("3","Generate")
     gen_col, _ = st.columns([1, 2])
     with gen_col:
         generate = st.button(

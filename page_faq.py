@@ -2,13 +2,10 @@ import streamlit as st
 
 
 def show():
-    try:
-        from abi_ui import page_header
-        page_header("Help & FAQ",
-                    "Step-by-step guides and answers for every AR Suite tool.",
-                    "❓")
-    except ImportError:
-        st.markdown("## ❓ Help & FAQ")
+    from abi_ui import page_header
+    page_header("Help & FAQ",
+                "Step-by-step guides and answers for every AR Suite tool.",
+                "❓")
 
     with st.expander("🔍  Remittance Reconciliation — what does it do?", expanded=False):
         st.markdown("""

@@ -732,13 +732,10 @@ def _show_payout_checker():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def show():
-    try:
-        from abi_ui import page_header
-        page_header("Bonus & Payout Tools",
-                    "Compare SAP accounts vs bonus file, and scan for X-payout entries.",
-                    "🎁")
-    except ImportError:
-        st.markdown("## 🎁 Bonus & Payout Tools")
+    from abi_ui import page_header
+    page_header("Bonus & Payout Tools",
+                "Compare SAP accounts vs bonus file, and scan for X-payout entries.",
+                "🎁")
     st.markdown("## 🎁 Bonus & Payout Tools")
     st.caption("Customer matching against bonus files, and payout / payment block checker.")
 
