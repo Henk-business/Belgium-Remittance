@@ -290,6 +290,7 @@ st.sidebar.markdown(f"""
 
 PAGES = [
     "Home",
+    "AR Calendar",
     "Remittance Reconciliation",
     "Account Splitter",
     "Customer Overview",
@@ -323,6 +324,8 @@ st.sidebar.markdown("""
 
 if page == "Home":
     import page_home; page_home.show()
+elif page == "AR Calendar":
+    import page_calendar; page_calendar.show()
 elif page == "Remittance Reconciliation":
     import page_remittance; page_remittance.show()
 elif page == "Account Splitter":
