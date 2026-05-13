@@ -166,7 +166,6 @@ def show():
         st.write("")
         if st.button("Open Remittance Tool →", use_container_width=True, key="btn_rem", type="primary"):
             st.session_state["active_page"] = "Remittance Reconciliation"
-            st.rerun()
 
     with col2:
         st.markdown("""
@@ -189,7 +188,6 @@ def show():
         st.write("")
         if st.button("Open Account Splitter →", use_container_width=True, key="btn_spl", type="primary"):
             st.session_state["active_page"] = "Account Splitter"
-            st.rerun()
 
     st.write("")
     col3, col4 = st.columns(2)
@@ -218,7 +216,6 @@ def show():
         st.write("")
         if st.button("Open Customer Overview →", use_container_width=True, key="btn_ov", type="primary"):
             st.session_state["active_page"] = "Customer Overview"
-            st.rerun()
 
     with col4:
         st.markdown("""
@@ -242,7 +239,6 @@ def show():
         st.write("")
         if st.button("Open Bonus Tools →", use_container_width=True, key="btn_bon", type="primary"):
             st.session_state["active_page"] = "Bonus & Payout"
-            st.rerun()
 
     # ── Help strip ─────────────────────────────────────────────────────────
     st.write("")

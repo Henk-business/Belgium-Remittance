@@ -297,18 +297,16 @@ PAGES = [
     "Help & FAQ",
 ]
 
-# Initialise nav key in session_state if missing
-if "nav_page" not in st.session_state:
-    st.session_state["nav_page"] = st.session_state.get("active_page", PAGES[0])
-if st.session_state.get("nav_page") not in PAGES:
-    st.session_state["nav_page"] = PAGES[0]
+# Single source of truth: active_page in session_state
+if "active_page" not in st.session_state or st.session_state["active_page"] not in PAGES:
+    st.session_state["active_page"] = PAGES[0]
 
-# If a page button set active_page, sync it to nav_page before the radio renders
-if "active_page" in st.session_state and st.session_state["active_page"] != st.session_state.get("nav_page"):
-    st.session_state["nav_page"] = st.session_state["active_page"]
-
-page = st.sidebar.radio("Navigation", PAGES, key="nav_page", label_visibility="collapsed")
-# Keep active_page in sync so home page buttons still work
+page = st.sidebar.radio(
+    "Navigation",
+    PAGES,
+    index=PAGES.index(st.session_state["active_page"]),
+    label_visibility="collapsed",
+)
 st.session_state["active_page"] = page
 
 st.sidebar.markdown("""
