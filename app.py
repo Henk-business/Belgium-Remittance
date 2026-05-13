@@ -297,17 +297,19 @@ PAGES = [
     "Help & FAQ",
 ]
 
-# Single source of truth: active_page in session_state
-if "active_page" not in st.session_state or st.session_state["active_page"] not in PAGES:
-    st.session_state["active_page"] = PAGES[0]
+# Initialise the radio key once — never overwrite it on subsequent reruns
+# (writing to a widget's own key mid-run causes the extra bounce)
+if "active_page" not in st.session_state:
+    st.session_state["active_page"] = "Home"
+if st.session_state["active_page"] not in PAGES:
+    st.session_state["active_page"] = "Home"
 
 page = st.sidebar.radio(
     "Navigation",
     PAGES,
-    index=PAGES.index(st.session_state["active_page"]),
+    key="active_page",          # radio owns this key — no index= needed
     label_visibility="collapsed",
 )
-st.session_state["active_page"] = page
 
 st.sidebar.markdown("""
 <div style='position:fixed; bottom:0; left:0; width:230px;
