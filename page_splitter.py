@@ -53,10 +53,11 @@ def _find(df, candidates):
 
 
 def show():
-    from abi_ui import page_header, section_header
+    from abi_ui import page_header, section_header, today_bar
     page_header("Account Splitter",
                 "Split a multi-account SAP export into one sheet per customer — with custom templates.",
                 "📂")
+    today_bar()
 
 
 

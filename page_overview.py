@@ -9,10 +9,11 @@ from common import get_email, mailto_link, LANG_LABELS, detect_customer_name
 
 
 def show():
-    from abi_ui import page_header, section_header
+    from abi_ui import page_header, section_header, today_bar
     page_header("Customer Overview",
                 "Year-by-year or current-period breakdown grouped by clearing document.",
                 "📊")
+    today_bar()
 
 
     # ── UPLOAD ────────────────────────────────────────────────────────────────

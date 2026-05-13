@@ -1,13 +1,10 @@
-# AR Calendar — parsed from user's monthly schedule
-# Structure: day_of_month -> list of tasks
-# Tasks have: type (DD/Overview/Retour/UAC/Meeting), account, notes
+# AR Calendar — Belgium AR team monthly schedule
+# Retour removed as requested
 
 CALENDAR = {
     1: [
         {"type": "Overview", "account": "VEPECA",        "format": "DD",     "note": "5th cutoff"},
-        {"type": "Retour",   "account": "VEPECA",        "format": "",       "note": ""},
         {"type": "Overview", "account": "BELBEV",        "format": "DD",     "note": "5th cutoff"},
-        {"type": "Retour",   "account": "BELBEV",        "format": "",       "note": ""},
     ],
     4: [
         {"type": "DD",       "account": "VEPECA",        "format": "",       "note": ""},
@@ -18,9 +15,7 @@ CALENDAR = {
         {"type": "Overview", "account": "VANUXEEM",      "format": "DD",     "note": "15th cutoff"},
     ],
     6: [
-        {"type": "Retour",   "account": "VANUXEEM",      "format": "",       "note": ""},
-        {"type": "Overview", "account": "NORTH & SOUTH BEVERAGES", "format": "DD", "note": "15th cutoff"},
-        {"type": "Retour",   "account": "NORTH & SOUTH BEVERAGES","format": "", "note": ""},
+        {"type": "Overview", "account": "NORTH & SOUTH", "format": "DD",     "note": "15th cutoff"},
         {"type": "Overview", "account": "NEGOBOISSONS",  "format": "Manual", "note": "Special format"},
         {"type": "Overview", "account": "DELSART",       "format": "Manual", "note": ""},
         {"type": "Overview", "account": "VVD",           "format": "DD",     "note": "10th cutoff"},
@@ -30,18 +25,14 @@ CALENDAR = {
         {"type": "DD",       "account": "NASBB",         "format": "",       "note": ""},
         {"type": "DD",       "account": "VANUXEEM",      "format": "",       "note": ""},
         {"type": "Overview", "account": "VEPECA",        "format": "DD",     "note": "20th cutoff"},
-        {"type": "Retour",   "account": "VEPECA",        "format": "",       "note": ""},
         {"type": "Overview", "account": "BELBEV",        "format": "DD",     "note": "20th cutoff"},
-        {"type": "Retour",   "account": "BELBEV",        "format": "",       "note": ""},
         {"type": "Overview", "account": "PRIK & TIK",    "format": "Manual", "note": ""},
         {"type": "DD",       "account": "VVD",           "format": "",       "note": ""},
     ],
     18: [
         {"type": "Overview", "account": "SABIKO",        "format": "DD",     "note": "28th cutoff"},
-        {"type": "Retour",   "account": "SABIKO",        "format": "",       "note": ""},
         {"type": "Overview", "account": "VVD",           "format": "DD",     "note": "25th cutoff"},
         {"type": "Overview", "account": "VANUXEEM",      "format": "DD",     "note": "30th cutoff"},
-        {"type": "Retour",   "account": "VANUXEEM",      "format": "",       "note": ""},
         {"type": "Overview", "account": "GALLEE",        "format": "",       "note": ""},
         {"type": "Overview", "account": "PRIK & TIK",    "format": "Manual", "note": ""},
         {"type": "Overview", "account": "NEGOBOISSONS",  "format": "Manual", "note": "Special format"},
@@ -58,11 +49,9 @@ CALENDAR = {
     ],
 }
 
-# Colour coding per task type
 TYPE_COLORS = {
     "DD":       {"bg": "#FFC72C", "fg": "#0A0A0A", "label": "Direct Debit"},
     "Overview": {"bg": "#0A0A0A", "fg": "#FFC72C", "label": "Overview"},
-    "Retour":   {"bg": "#E8E3DC", "fg": "#3A3530", "label": "Retour"},
     "UAC":      {"bg": "#C41230", "fg": "#FFFFFF",  "label": "UAC"},
     "Meeting":  {"bg": "#2E75B6", "fg": "#FFFFFF",  "label": "Meeting"},
 }

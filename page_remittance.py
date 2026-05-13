@@ -11,10 +11,11 @@ from common import get_email, LANG_LABELS, mailto_link
 
 
 def show():
-    from abi_ui import page_header
+    from abi_ui import page_header, today_bar
     page_header("Remittance Reconciliation",
                 "Match a client remittance against your SAP open items. SAP is the source of truth.",
                 "🔍")
+    today_bar()
 
     tab1, tab2 = st.tabs(["📄 Remittance matching", "💰 Amount-only matching"])
 

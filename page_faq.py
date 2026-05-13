@@ -2,10 +2,11 @@ import streamlit as st
 
 
 def show():
-    from abi_ui import page_header
+    from abi_ui import page_header, today_bar
     page_header("Help & FAQ",
                 "Step-by-step guides and answers for every AR Suite tool.",
                 "❓")
+    today_bar()
 
     with st.expander("🔍  Remittance Reconciliation — what does it do?", expanded=False):
         st.markdown("""
