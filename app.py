@@ -384,9 +384,9 @@ try:
 
     month_section = (
         f"<div style='margin-bottom:14px;'>"
-        f"<div style='font-size:10px;color:#5A5550;margin-bottom:5px;letter-spacing:0.04em;'>"
+        f"<div style='font-size:10px;color:#9A9490;margin-bottom:5px;letter-spacing:0.04em;'>"
         f"{_today.strftime('%B')} &nbsp;·&nbsp; day {_day} of {_dim}</div>"
-        f"<div style='background:rgba(255,255,255,0.06);border-radius:4px;height:4px;'>"
+        f"<div style='background:rgba(255,255,255,0.1);border-radius:4px;height:4px;'>"
         f"<div style='background:#FFC72C;width:{_pct}%;height:4px;border-radius:4px;'></div>"
         f"</div></div>"
     )
@@ -395,10 +395,10 @@ try:
     if _tasks:
         today_rows = "".join(
             f"<div style='display:flex;gap:8px;align-items:flex-start;"
-            f"padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);'>"
+            f"padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.08);'>"
             f"{_dot(t['type'])}"
             f"<div style='flex:1;min-width:0;'>"
-            f"<div style='font-size:11px;font-weight:600;color:#E8E3DC;line-height:1.3;"
+            f"<div style='font-size:12px;font-weight:600;color:#FFFFFF;line-height:1.3;"
             f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>{t['account']}</div>"
             f"<div style='margin-top:3px;'>{_pill(t)}</div>"
             f"</div></div>"
@@ -406,7 +406,7 @@ try:
         )
         expander_label = f"📋 Today · {len(_tasks)} task{'s' if len(_tasks)!=1 else ''}"
     else:
-        today_rows     = (f"<div style='font-size:11px;color:#5A5550;"
+        today_rows     = (f"<div style='font-size:12px;color:#9A9490;"
                           f"padding:6px 0;'>Nothing scheduled today ✓</div>")
         expander_label = "📋 Today · clear"
 
@@ -426,19 +426,19 @@ try:
             f"<div style='display:flex;gap:8px;align-items:flex-start;padding:5px 0;'>"
             f"{_dot(t['type'])}"
             f"<div style='flex:1;min-width:0;'>"
-            f"<div style='font-size:11px;color:#7A7065;line-height:1.3;"
+            f"<div style='font-size:12px;color:#C8C3BC;line-height:1.3;"
             f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>{t['account']}</div>"
             f"<div style='margin-top:3px;'>{_pill(t)}</div>"
             f"</div></div>"
             for t in _upcoming
         )
         upcoming_section = (
-            f"<div style='font-size:9px;font-weight:700;color:#5A5550;letter-spacing:0.1em;"
+            f"<div style='font-size:9px;font-weight:700;color:#7A7065;letter-spacing:0.1em;"
             f"text-transform:uppercase;margin:12px 0 6px;'>{_up_heading}</div>"
             f"{up_rows}"
         )
     else:
-        upcoming_section = (f"<div style='font-size:10px;color:#3A3530;margin-top:10px;'>"
+        upcoming_section = (f"<div style='font-size:11px;color:#5A5550;margin-top:10px;'>"
                             f"No more tasks this month</div>")
 
     widget_html = (
