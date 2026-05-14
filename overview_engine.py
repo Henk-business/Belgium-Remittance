@@ -762,8 +762,10 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     if amt_col:      df[amt_col]      = pd.to_numeric( df[amt_col],      errors="coerce")
     if arr_col:      df[arr_col]      = pd.to_numeric( df[arr_col],      errors="coerce")
 
-    # Recalculate arrears to today (must happen before group parsing)
-    df = _recalc_arrears(df, _dt.date.today())
+    # NOTE: arrears are NOT recalculated here. The SAP export already contains
+    # the correct arrears values as of the export date. Recalculating against
+    # today would change the numbers and cause a mismatch with the source export.
+    # Only build_current_overview recalculates arrears (it's a live snapshot).
     # NOTE: remove_overdues for multi-year ONLY suppresses the Current Open
     # section — it does NOT filter rows from historical cleared years.
     # Historical year rows always show in full so the reconciliation is visible.
