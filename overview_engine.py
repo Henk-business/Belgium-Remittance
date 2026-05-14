@@ -728,6 +728,7 @@ def build_overview(df: pd.DataFrame, amt_col: str,
         "Special G/L ind.","Billing Document","Reference Key 1",
         "doc_number_str","ref","sap_class","is_open","header_text",
         "clearing_date","clearing_doc","text",
+        "Case ID", "Status", "Dunning Block",
     }
     display_cols = [c for c in df.columns if c not in STRIP and c is not None and str(c) != "None"]
     ncols  = len(display_cols)
@@ -736,11 +737,19 @@ def build_overview(df: pd.DataFrame, amt_col: str,
         "Reference Key 3":14,"Document Date":13,"Net due date":13,
         "Document Type":26,"Amount in local currency":20,
         "Arrears after net due date":24,"Payment Method":13,
-        "G/L Account":18,"Case ID":10,"Status":10,
-        "Dunning Block":13,"Disputed item":13,
+        "G/L Account":22,"Disputed item":13,
     }
     amt_ci = (display_cols.index(amt_col)+1) if amt_col and amt_col in display_cols else None
     pay_col      = next((c for c in df.columns if "payment method" in c.lower()), None)
+
+    # G/L label mapping (language-aware)
+    _gl_map_ov = GL_LABELS.get(lang, GL_LABELS["en"])
+    gl_col_ov  = next((c for c in df.columns if "g/l" in c.lower() or "gl account" in c.lower()), None)
+
+    def _gl_label_ov(raw_val):
+        s = str(raw_val) if raw_val is not None else ""
+        lbl = _gl_map_ov.get(s)
+        return f"{s} ({lbl})" if lbl else s
 
     ndd_col      = next((c for c in df.columns if "net due"       in c.lower()), None)
     arr_col      = next((c for c in df.columns if "arrears"       in c.lower()), None)
@@ -842,6 +851,9 @@ def build_overview(df: pd.DataFrame, amt_col: str,
             if doc_type_col and col == doc_type_col:
                 pm  = row.get(pay_col, "") if pay_col else ""
                 val = _desc(val, row.get(amt_col, 0), pm, lang)
+            # Append Beer/Rent label to G/L Account column
+            elif gl_col_ov and col == gl_col_ov:
+                val = _gl_label_ov(val)
             elif isinstance(val, pd.Timestamp):
                 val = val.to_pydatetime()
             elif not isinstance(val, (str, int, float, _dt.datetime, type(None))):
