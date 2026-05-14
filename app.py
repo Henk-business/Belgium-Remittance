@@ -308,9 +308,122 @@ if st.session_state["active_page"] not in PAGES:
 page = st.sidebar.radio(
     "Navigation",
     PAGES,
-    key="active_page",          # radio owns this key — no index= needed
+    key="active_page",
     label_visibility="collapsed",
 )
+
+# ── Persistent task widget in sidebar ─────────────────────────────────────
+try:
+    import datetime as _dt
+    from calendar_data import CALENDAR, TYPE_COLORS as _TC
+
+    _today    = _dt.date.today()
+    _day      = _today.day
+    _tasks    = CALENDAR.get(_day, [])
+
+    # Find next day this month that has tasks
+    _upcoming = []
+    for _d in range(_day + 1, 32):
+        _t = CALENDAR.get(_d, [])
+        if _t:
+            _upcoming = [(_d, t) for t in _t]
+            break
+
+    # Colour dot for each type
+    def _dot(typ):
+        bg = _TC.get(typ, {"bg": "#888"})["bg"]
+        return (f"<span style='display:inline-block;width:8px;height:8px;"
+                f"border-radius:50%;background:{bg};flex-shrink:0;margin-top:3px;'></span>")
+
+    def _pill(t):
+        bg = _TC.get(t["type"], {"bg":"#555","fg":"#fff"})["bg"]
+        fg = _TC.get(t["type"], {"bg":"#555","fg":"#fff"})["fg"]
+        fmt = f" ({t['format']})" if t["format"] else ""
+        return (f"<span style='background:{bg};color:{fg};font-size:9px;font-weight:700;"
+                f"padding:1px 6px;border-radius:3px;white-space:nowrap;'>"
+                f"{t['type']}{fmt}</span>")
+
+    # Build today section
+    if _tasks:
+        _today_html = "".join(
+            f"<div style='display:flex;gap:7px;align-items:flex-start;"
+            f"padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.06);'>"
+            f"{_dot(t['type'])}"
+            f"<div style='flex:1;min-width:0;'>"
+            f"<div style='font-size:11px;font-weight:600;color:#E8E3DC;"
+            f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
+            f"{t['account']}</div>"
+            f"<div style='margin-top:1px;'>{_pill(t)}</div>"
+            f"</div></div>"
+            for t in _tasks
+        )
+        _today_label = f"📋 Today — {len(_tasks)} task{'s' if len(_tasks)!=1 else ''}"
+    else:
+        _today_html  = ("<div style='font-size:11px;color:#5A5550;padding:6px 0;'>"
+                        "Nothing scheduled today ✓</div>")
+        _today_label = f"📋 Today — clear"
+
+    # Build upcoming section
+    if _upcoming:
+        _next_day = _upcoming[0][0]
+        _days_away = _next_day - _day
+        _up_label = (f"{'Tomorrow' if _days_away==1 else f'In {_days_away} days'}"
+                     f" ({_next_day} {_today.strftime('%b')})")
+        _up_html = "".join(
+            f"<div style='display:flex;gap:7px;align-items:flex-start;padding:4px 0;'>"
+            f"{_dot(t['type'])}"
+            f"<div style='flex:1;min-width:0;'>"
+            f"<div style='font-size:11px;color:#9A9490;"
+            f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
+            f"{t['account']}</div>"
+            f"<div style='margin-top:1px;'>{_pill(t)}</div>"
+            f"</div></div>"
+            for _, t in _upcoming
+        )
+    else:
+        _up_label = "No more tasks this month"
+        _up_html  = ""
+
+    # Month progress bar
+    import calendar as _cal
+    _, _days_in_month = _cal.monthrange(_today.year, _today.month)
+    _pct = int((_day / _days_in_month) * 100)
+    _month_bar = (
+        f"<div style='font-size:10px;color:#5A5550;margin-bottom:3px;'>"
+        f"{_today.strftime('%B')} — day {_day} of {_days_in_month}</div>"
+        f"<div style='background:rgba(255,255,255,0.08);border-radius:4px;height:5px;'>"
+        f"<div style='background:#FFC72C;width:{_pct}%;height:5px;border-radius:4px;'></div>"
+        f"</div>"
+    )
+
+    _widget_html = (
+        f"<div style='background:rgba(255,255,255,0.03);border-radius:10px;"
+        f"padding:12px 14px;margin-bottom:6px;"
+        f"border:1px solid rgba(255,255,255,0.07);'>"
+        # Month progress
+        f"<div style='margin-bottom:12px;'>{_month_bar}</div>"
+        # Today header
+        f"<div style='font-size:10px;font-weight:700;color:#FFC72C;"
+        f"letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;'>"
+        f"Today · {_today.strftime('%-d %b')}</div>"
+        f"{_today_html}"
+        # Upcoming header
+        + (f"<div style='font-size:10px;font-weight:700;color:#5A5550;"
+           f"letter-spacing:0.08em;text-transform:uppercase;margin:10px 0 6px;'>"
+           f"Next up · {_up_label}</div>"
+           f"{_up_html}" if _upcoming else
+           f"<div style='font-size:10px;color:#3A3530;margin-top:8px;'>No more tasks this month</div>")
+        + f"</div>"
+    )
+
+    with st.sidebar.expander(_today_label, expanded=True):
+        st.markdown(_widget_html, unsafe_allow_html=True)
+        if st.button("Open Calendar →", key="sb_cal_btn", use_container_width=True):
+            st.session_state["active_page"] = "AR Calendar"
+            st.rerun()
+
+except Exception:
+    pass  # Never crash the whole app due to calendar widget
 
 st.sidebar.markdown("""
 <div style='position:fixed; bottom:0; left:0; width:230px;
