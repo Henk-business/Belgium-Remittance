@@ -235,8 +235,40 @@ def show():
         unsafe_allow_html=True
     )
 
+    # ── Day detail picker ──────────────────────────────────────────────────
+    st.markdown("---")
+    pick_col, _ = st.columns([2, 3])
+    with pick_col:
+        pick_day = st.number_input(
+            f"🔍 Look up a specific day in {sel_month}",
+            min_value=1, max_value=days_in_month,
+            value=min(today.day, days_in_month) if month_num == today.month else 1,
+            key="cal_pick"
+        )
 
-    # ── Editable task table ────────────────────────────────────────────────
+    pick_tasks  = active_cal.get(pick_day, [])
+    picked_date = datetime.date(sel_year, month_num, pick_day)
+
+    if pick_tasks:
+        st.markdown(f"**{picked_date.strftime('%A %-d %B')} — {len(pick_tasks)} task(s):**")
+        for t in pick_tasks:
+            c    = TYPE_COLORS.get(t["type"], {"bg":"#E8E3DC","fg":"#0A0A0A"})
+            fmt  = f" · {t.get('format','')} format" if t.get("format") else ""
+            note = f" · {t.get('note','')}" if t.get("note") else ""
+            st.markdown(
+                f"<div style='display:flex;align-items:center;gap:10px;padding:10px 14px;"
+                f"background:white;border:1px solid #E8E3DC;border-radius:8px;"
+                f"border-left:4px solid {c['bg']};margin-bottom:5px;'>"
+                f"<span style='background:{c['bg']};color:{c['fg']};font-size:10px;"
+                f"font-weight:700;padding:2px 8px;border-radius:4px;"
+                f"letter-spacing:0.06em;white-space:nowrap;'>{t['type']}</span>"
+                f"<span style='font-weight:700;color:#0A0A0A;'>{t['account']}</span>"
+                f"<span style='font-size:12px;color:#7A7065;'>{fmt}{note}</span>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+    else:
+        st.info(f"Nothing scheduled on {picked_date.strftime('%-d %B')}.")
     st.markdown("---")
     import pandas as pd
 
