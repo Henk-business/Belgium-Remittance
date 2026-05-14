@@ -330,8 +330,14 @@ PAGES = [
     "Help & FAQ",
 ]
 
-# Initialise the radio key once — never overwrite it on subsequent reruns
-# (writing to a widget's own key mid-run causes the extra bounce)
+# Handle redirect requests from page buttons (home page tool cards etc).
+# Buttons cannot write to a radio's owned key mid-run, so they write to
+# "_nav_to" instead. We read it here — BEFORE the radio renders — and apply.
+if "_nav_to" in st.session_state:
+    _dest = st.session_state.pop("_nav_to")
+    if _dest in PAGES:
+        st.session_state["active_page"] = _dest
+
 if "active_page" not in st.session_state:
     st.session_state["active_page"] = "Home"
 if st.session_state["active_page"] not in PAGES:
@@ -455,7 +461,7 @@ try:
     with st.sidebar.expander("", expanded=True):
         st.markdown(widget_html, unsafe_allow_html=True)
         if st.button("Open Calendar →", key="sb_cal_btn", use_container_width=True):
-            st.session_state["active_page"] = "AR Calendar"
+            st.session_state["_nav_to"] = "AR Calendar"
             st.rerun()
 
 except Exception:
