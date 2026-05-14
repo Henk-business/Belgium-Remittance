@@ -242,6 +242,38 @@ h3      { color: #1C1C1C !important; font-weight: 600 !important; }
 
 /* ── HR ───────────────────────────────────────────────────────────────────── */
 hr { border-color: #E8E3DC !important; }
+
+/* ── Sidebar expander — force dark theme to match sidebar background ──────── */
+[data-testid="stSidebar"] [data-testid="stExpander"] {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 10px !important;
+    box-shadow: none !important;
+}
+[data-testid="stSidebar"] [data-testid="stExpander"] summary {
+    color: #E8E3DC !important;
+    font-size: 11px !important;
+    padding: 8px 12px !important;
+}
+[data-testid="stSidebar"] [data-testid="stExpander"] summary svg {
+    fill: #5A5550 !important;
+}
+[data-testid="stSidebar"] [data-testid="stExpander"] > div > div {
+    background: transparent !important;
+}
+[data-testid="stSidebar"] .stButton > button {
+    background: rgba(255,199,44,0.1) !important;
+    color: #FFC72C !important;
+    border: 1px solid rgba(255,199,44,0.25) !important;
+    font-size: 12px !important;
+    box-shadow: none !important;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(255,199,44,0.2) !important;
+    border-color: #FFC72C !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -323,107 +355,111 @@ try:
 
     # Find next day this month that has tasks
     _upcoming = []
+    _next_day = None
     for _d in range(_day + 1, 32):
         _t = CALENDAR.get(_d, [])
         if _t:
-            _upcoming = [(_d, t) for t in _t]
+            _next_day = _d
+            _upcoming = _t
             break
 
-    # Colour dot for each type
     def _dot(typ):
         bg = _TC.get(typ, {"bg": "#888"})["bg"]
-        return (f"<span style='display:inline-block;width:8px;height:8px;"
-                f"border-radius:50%;background:{bg};flex-shrink:0;margin-top:3px;'></span>")
+        return (f"<span style='display:inline-block;width:7px;height:7px;"
+                f"border-radius:50%;background:{bg};flex-shrink:0;margin-top:4px;'></span>")
 
     def _pill(t):
-        bg = _TC.get(t["type"], {"bg":"#555","fg":"#fff"})["bg"]
-        fg = _TC.get(t["type"], {"bg":"#555","fg":"#fff"})["fg"]
+        bg  = _TC.get(t["type"], {"bg":"#333","fg":"#FFC72C"})["bg"]
+        fg  = _TC.get(t["type"], {"bg":"#333","fg":"#FFC72C"})["fg"]
         fmt = f" ({t['format']})" if t["format"] else ""
         return (f"<span style='background:{bg};color:{fg};font-size:9px;font-weight:700;"
-                f"padding:1px 6px;border-radius:3px;white-space:nowrap;'>"
+                f"padding:1px 6px;border-radius:3px;letter-spacing:0.05em;white-space:nowrap;"
+                f"border:1px solid rgba(255,255,255,0.08);'>"
                 f"{t['type']}{fmt}</span>")
-
-    # Build today section
-    if _tasks:
-        _today_html = "".join(
-            f"<div style='display:flex;gap:7px;align-items:flex-start;"
-            f"padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.06);'>"
-            f"{_dot(t['type'])}"
-            f"<div style='flex:1;min-width:0;'>"
-            f"<div style='font-size:11px;font-weight:600;color:#E8E3DC;"
-            f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
-            f"{t['account']}</div>"
-            f"<div style='margin-top:1px;'>{_pill(t)}</div>"
-            f"</div></div>"
-            for t in _tasks
-        )
-        _today_label = f"📋 Today — {len(_tasks)} task{'s' if len(_tasks)!=1 else ''}"
-    else:
-        _today_html  = ("<div style='font-size:11px;color:#5A5550;padding:6px 0;'>"
-                        "Nothing scheduled today ✓</div>")
-        _today_label = f"📋 Today — clear"
-
-    # Build upcoming section
-    if _upcoming:
-        _next_day = _upcoming[0][0]
-        _days_away = _next_day - _day
-        _up_label = (f"{'Tomorrow' if _days_away==1 else f'In {_days_away} days'}"
-                     f" ({_next_day} {_today.strftime('%b')})")
-        _up_html = "".join(
-            f"<div style='display:flex;gap:7px;align-items:flex-start;padding:4px 0;'>"
-            f"{_dot(t['type'])}"
-            f"<div style='flex:1;min-width:0;'>"
-            f"<div style='font-size:11px;color:#9A9490;"
-            f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
-            f"{t['account']}</div>"
-            f"<div style='margin-top:1px;'>{_pill(t)}</div>"
-            f"</div></div>"
-            for _, t in _upcoming
-        )
-    else:
-        _up_label = "No more tasks this month"
-        _up_html  = ""
 
     # Month progress bar
     import calendar as _cal
-    _, _days_in_month = _cal.monthrange(_today.year, _today.month)
-    _pct = int((_day / _days_in_month) * 100)
-    _month_bar = (
-        f"<div style='font-size:10px;color:#5A5550;margin-bottom:3px;'>"
-        f"{_today.strftime('%B')} — day {_day} of {_days_in_month}</div>"
-        f"<div style='background:rgba(255,255,255,0.08);border-radius:4px;height:5px;'>"
-        f"<div style='background:#FFC72C;width:{_pct}%;height:5px;border-radius:4px;'></div>"
+    _, _dim = _cal.monthrange(_today.year, _today.month)
+    _pct    = int((_day / _dim) * 100)
+
+    month_section = (
+        f"<div style='margin-bottom:14px;'>"
+        f"<div style='font-size:10px;color:#5A5550;margin-bottom:5px;letter-spacing:0.04em;'>"
+        f"{_today.strftime('%B')} &nbsp;·&nbsp; day {_day} of {_dim}</div>"
+        f"<div style='background:rgba(255,255,255,0.06);border-radius:4px;height:4px;'>"
+        f"<div style='background:#FFC72C;width:{_pct}%;height:4px;border-radius:4px;'></div>"
+        f"</div></div>"
+    )
+
+    # Today tasks
+    if _tasks:
+        today_rows = "".join(
+            f"<div style='display:flex;gap:8px;align-items:flex-start;"
+            f"padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);'>"
+            f"{_dot(t['type'])}"
+            f"<div style='flex:1;min-width:0;'>"
+            f"<div style='font-size:11px;font-weight:600;color:#E8E3DC;line-height:1.3;"
+            f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>{t['account']}</div>"
+            f"<div style='margin-top:3px;'>{_pill(t)}</div>"
+            f"</div></div>"
+            for t in _tasks
+        )
+        expander_label = f"📋 Today · {len(_tasks)} task{'s' if len(_tasks)!=1 else ''}"
+    else:
+        today_rows     = (f"<div style='font-size:11px;color:#5A5550;"
+                          f"padding:6px 0;'>Nothing scheduled today ✓</div>")
+        expander_label = "📋 Today · clear"
+
+    today_section = (
+        f"<div style='font-size:9px;font-weight:700;color:#FFC72C;letter-spacing:0.1em;"
+        f"text-transform:uppercase;margin-bottom:6px;'>"
+        f"Today &nbsp;·&nbsp; {_today.strftime('%-d %b')}</div>"
+        f"{today_rows}"
+    )
+
+    # Upcoming tasks
+    if _upcoming and _next_day:
+        _days_away  = _next_day - _day
+        _up_heading = ("Tomorrow" if _days_away == 1
+                       else f"In {_days_away} days") + f" · {_next_day} {_today.strftime('%b')}"
+        up_rows = "".join(
+            f"<div style='display:flex;gap:8px;align-items:flex-start;padding:5px 0;'>"
+            f"{_dot(t['type'])}"
+            f"<div style='flex:1;min-width:0;'>"
+            f"<div style='font-size:11px;color:#7A7065;line-height:1.3;"
+            f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>{t['account']}</div>"
+            f"<div style='margin-top:3px;'>{_pill(t)}</div>"
+            f"</div></div>"
+            for t in _upcoming
+        )
+        upcoming_section = (
+            f"<div style='font-size:9px;font-weight:700;color:#5A5550;letter-spacing:0.1em;"
+            f"text-transform:uppercase;margin:12px 0 6px;'>{_up_heading}</div>"
+            f"{up_rows}"
+        )
+    else:
+        upcoming_section = (f"<div style='font-size:10px;color:#3A3530;margin-top:10px;'>"
+                            f"No more tasks this month</div>")
+
+    widget_html = (
+        f"<div style='padding:2px 0 8px;'>"
+        f"{month_section}{today_section}{upcoming_section}"
         f"</div>"
     )
 
-    _widget_html = (
-        f"<div style='background:rgba(255,255,255,0.03);border-radius:10px;"
-        f"padding:12px 14px;margin-bottom:6px;"
-        f"border:1px solid rgba(255,255,255,0.07);'>"
-        # Month progress
-        f"<div style='margin-bottom:12px;'>{_month_bar}</div>"
-        # Today header
-        f"<div style='font-size:10px;font-weight:700;color:#FFC72C;"
-        f"letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;'>"
-        f"Today · {_today.strftime('%-d %b')}</div>"
-        f"{_today_html}"
-        # Upcoming header
-        + (f"<div style='font-size:10px;font-weight:700;color:#5A5550;"
-           f"letter-spacing:0.08em;text-transform:uppercase;margin:10px 0 6px;'>"
-           f"Next up · {_up_label}</div>"
-           f"{_up_html}" if _upcoming else
-           f"<div style='font-size:10px;color:#3A3530;margin-top:8px;'>No more tasks this month</div>")
-        + f"</div>"
+    st.sidebar.markdown(
+        f"<div style='font-size:11px;font-weight:600;color:#E8E3DC;"
+        f"padding:10px 4px 4px;letter-spacing:0.02em;'>{expander_label}</div>",
+        unsafe_allow_html=True
     )
-
-    with st.sidebar.expander(_today_label, expanded=True):
-        st.markdown(_widget_html, unsafe_allow_html=True)
+    with st.sidebar.expander("", expanded=True):
+        st.markdown(widget_html, unsafe_allow_html=True)
         if st.button("Open Calendar →", key="sb_cal_btn", use_container_width=True):
             st.session_state["active_page"] = "AR Calendar"
             st.rerun()
 
 except Exception:
-    pass  # Never crash the whole app due to calendar widget
+    pass
 
 st.sidebar.markdown("""
 <div style='position:fixed; bottom:0; left:0; width:230px;
