@@ -353,17 +353,29 @@ page = st.sidebar.radio(
 # ── Persistent task widget in sidebar ─────────────────────────────────────
 try:
     import datetime as _dt
-    from calendar_data import CALENDAR, TYPE_COLORS as _TC
+    from calendar_data import TYPE_COLORS as _TC
 
     _today    = _dt.date.today()
     _day      = _today.day
-    _tasks    = CALENDAR.get(_day, [])
+
+    # Use the active calendar from session state (selected in page_calendar)
+    _cals     = st.session_state.get("ar_calendars", {})
+    if not _cals:
+        try:
+            from calendar_data import CALENDAR as _CAL_DEFAULT
+            _cals = {"Wholesale Scope": _CAL_DEFAULT}
+        except ImportError:
+            _cals = {}
+    _active_name = st.session_state.get("ar_active_calendar", list(_cals.keys())[0] if _cals else "")
+    _active_cal  = _cals.get(_active_name, {})
+
+    _tasks    = _active_cal.get(_day, [])
 
     # Find next day this month that has tasks
     _upcoming = []
     _next_day = None
     for _d in range(_day + 1, 32):
-        _t = CALENDAR.get(_d, [])
+        _t = _active_cal.get(_d, [])
         if _t:
             _next_day = _d
             _upcoming = _t
@@ -455,7 +467,8 @@ try:
 
     st.sidebar.markdown(
         f"<div style='font-size:11px;font-weight:600;color:#E8E3DC;"
-        f"padding:10px 4px 4px;letter-spacing:0.02em;'>{expander_label}</div>",
+        f"padding:10px 4px 4px;letter-spacing:0.02em;'>{expander_label}"
+        f"<span style='font-size:9px;color:#5A5550;margin-left:6px;'>{_active_name}</span></div>",
         unsafe_allow_html=True
     )
     with st.sidebar.expander("", expanded=True):
