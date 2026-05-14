@@ -235,82 +235,90 @@ def show():
         unsafe_allow_html=True
     )
 
-    # ── Day detail + edit ──────────────────────────────────────────────────
+
+    # ── Editable task table ────────────────────────────────────────────────
     st.markdown("---")
-    pick_col, _ = st.columns([2, 3])
-    with pick_col:
-        pick_day = st.number_input(
-            f"Select day in {sel_month}", min_value=1, max_value=days_in_month,
-            value=min(today.day, days_in_month) if month_num == today.month else 1,
-            key="cal_pick"
+    import pandas as pd
+
+    if edit_mode:
+        st.markdown("**✏️ Edit tasks — click any cell to change, add rows at the bottom, select row + delete to remove**")
+        st.caption("Hit **💾 Save changes** when done.")
+    else:
+        st.markdown("**📋 All scheduled tasks** — toggle ✏️ to edit")
+
+    # Flatten calendar → dataframe
+    rows = []
+    for d in sorted(active_cal.keys()):
+        for t in active_cal[d]:
+            rows.append({
+                "Day":     int(d),
+                "Type":    t.get("type", ""),
+                "Account": t.get("account", ""),
+                "Format":  t.get("format", ""),
+                "Note":    t.get("note", ""),
+            })
+    df_cal = pd.DataFrame(rows, columns=["Day","Type","Account","Format","Note"]) \
+             if rows else pd.DataFrame(columns=["Day","Type","Account","Format","Note"])
+
+    if edit_mode:
+        edited = st.data_editor(
+            df_cal,
+            use_container_width=True,
+            num_rows="dynamic",
+            key="cal_table_editor",
+            column_config={
+                "Day": st.column_config.NumberColumn(
+                    "Day", help="Day of month (1–31)",
+                    min_value=1, max_value=31, step=1, required=True, width="small",
+                ),
+                "Type": st.column_config.SelectboxColumn(
+                    "Type", options=TASK_TYPES, required=True, width="small",
+                ),
+                "Account": st.column_config.TextColumn(
+                    "Account", required=True, width="medium",
+                ),
+                "Format": st.column_config.SelectboxColumn(
+                    "Format", options=FORMAT_OPTS, width="small",
+                ),
+                "Note": st.column_config.TextColumn("Note", width="large"),
+            },
+            hide_index=True,
         )
 
-    pick_tasks  = active_cal.get(pick_day, [])
-    picked_date = datetime.date(sel_year, month_num, pick_day)
-
-    # Show existing tasks for this day
-    if pick_tasks:
-        st.markdown(f"**{picked_date.strftime('%A %-d %B')} — {len(pick_tasks)} task(s):**")
-        for i, t in enumerate(pick_tasks):
-            c    = TYPE_COLORS.get(t["type"], {"bg":"#E8E3DC","fg":"#0A0A0A"})
-            fmt  = f" · {t.get('format','')} format" if t.get("format") else ""
-            note = f" · {t.get('note','')}" if t.get("note") else ""
-            row_html = (
-                f"<div style='display:flex;align-items:center;gap:10px;padding:10px 14px;"
-                f"background:white;border:1px solid #E8E3DC;border-radius:8px;"
-                f"border-left:4px solid {c['bg']};margin-bottom:5px;'>"
-                f"<span style='background:{c['bg']};color:{c['fg']};font-size:10px;"
-                f"font-weight:700;padding:2px 8px;border-radius:4px;"
-                f"letter-spacing:0.06em;white-space:nowrap;'>{t['type']}</span>"
-                f"<span style='font-weight:700;color:#0A0A0A;'>{t['account']}</span>"
-                f"<span style='font-size:12px;color:#7A7065;'>{fmt}{note}</span>"
-                f"</div>"
-            )
-            if edit_mode:
-                r_col, del_col = st.columns([9, 1])
-                with r_col:
-                    st.markdown(row_html, unsafe_allow_html=True)
-                with del_col:
-                    if st.button("🗑", key=f"del_task_{pick_day}_{i}",
-                                 help="Remove this task"):
-                        active_cal[pick_day] = [t2 for j, t2 in enumerate(pick_tasks) if j != i]
-                        if not active_cal[pick_day]:
-                            del active_cal[pick_day]
-                        _save_calendars(cals)
-                        st.rerun()
-            else:
-                st.markdown(row_html, unsafe_allow_html=True)
-    else:
-        st.info(f"Nothing scheduled on {picked_date.strftime('%-d %B')}.")
-
-    # ── Add task form (edit mode only) ─────────────────────────────────────
-    if edit_mode:
-        st.markdown(f"**➕ Add task on {picked_date.strftime('%-d %B')}**")
-        with st.form(key=f"add_task_form_{pick_day}", clear_on_submit=True):
-            f1, f2, f3, f4 = st.columns([2, 2, 2, 3])
-            with f1:
-                new_type = st.selectbox("Type", TASK_TYPES, key="new_task_type")
-            with f2:
-                new_fmt  = st.selectbox("Format", FORMAT_OPTS, key="new_task_fmt")
-            with f3:
-                new_acc  = st.text_input("Account", placeholder="e.g. VEPECA",
-                                         key="new_task_acc")
-            with f4:
-                new_note = st.text_input("Note (optional)", placeholder="e.g. 15th cutoff",
-                                         key="new_task_note")
-            submitted = st.form_submit_button("Add task", type="primary",
-                                               use_container_width=True)
-            if submitted and new_acc.strip():
+        if st.button("💾 Save changes", type="primary", key="cal_save_btn"):
+            new_cal = {}
+            for _, row in edited.iterrows():
+                try:
+                    d = int(row["Day"])
+                except (ValueError, TypeError):
+                    continue
+                if not (1 <= d <= 31):
+                    continue
+                acc = str(row.get("Account", "") or "").strip()
+                if not acc:
+                    continue
                 task = {
-                    "type":    new_type,
-                    "account": new_acc.strip().upper(),
-                    "format":  new_fmt,
-                    "note":    new_note.strip(),
+                    "type":    str(row.get("Type", "Overview")),
+                    "account": acc.upper(),
+                    "format":  str(row.get("Format", "") or ""),
+                    "note":    str(row.get("Note", "") or ""),
                 }
-                if pick_day not in active_cal:
-                    active_cal[pick_day] = []
-                active_cal[pick_day].append(task)
-                _save_calendars(cals)
-                st.rerun()
-            elif submitted:
-                st.error("Account name is required.")
+                new_cal.setdefault(d, []).append(task)
+            active_cal.clear()
+            active_cal.update(new_cal)
+            _save_calendars(cals)
+            st.success("✅ Calendar saved.")
+            st.rerun()
+    else:
+        st.dataframe(
+            df_cal,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Day":     st.column_config.NumberColumn("Day",    width="small"),
+                "Type":    st.column_config.TextColumn("Type",     width="small"),
+                "Account": st.column_config.TextColumn("Account",  width="medium"),
+                "Format":  st.column_config.TextColumn("Format",   width="small"),
+                "Note":    st.column_config.TextColumn("Note",     width="large"),
+            },
+        )
