@@ -412,6 +412,8 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
         "Special G/L ind.","Billing Document","Reference Key 1",
         "doc_number_str","ref","sap_class","is_open","header_text",
         "clearing_date","clearing_doc","text",
+        # Always hidden in current overview
+        "Case ID", "Status", "Dunning Block",
     }
     display_cols = [c for c in df.columns if c not in STRIP]
     ncols = len(display_cols)
@@ -420,9 +422,53 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
         "Reference Key 3":14,"Document Date":13,"Net due date":13,
         "Document Type":26,"Amount in local currency":20,
         "Arrears after net due date":24,"Payment Method":13,
-        "G/L Account":18,"Case ID":10,"Status":10,
-        "Dunning Block":13,"Disputed item":13,
+        "G/L Account":22,"Disputed item":13,
     }
+
+    # ── G/L code → label mapping (language-aware) ─────────────────────────────
+    _gl_map   = GL_LABELS.get(lang, GL_LABELS["en"])
+    gl_col    = next((c for c in df.columns if "g/l" in c.lower() or "gl account" in c.lower()), None)
+
+    # Determine which GL categories are present in the data
+    _categories_present = set()
+    if gl_col and gl_col in df.columns:
+        for v in df[gl_col].dropna().astype(str):
+            if v in _gl_map:
+                _categories_present.add(v)
+
+    _has_multi_cat = len(_categories_present) > 1
+    _gl_ci = (display_cols.index(gl_col) + 1) if gl_col and gl_col in display_cols else None
+
+    def _gl_label(raw_val):
+        """Return G/L code with category label in brackets if known."""
+        s = str(raw_val) if raw_val is not None else ""
+        lbl = _gl_map.get(s)
+        return f"{s} ({lbl})" if lbl else s
+
+    # ── Subtotal helpers ──────────────────────────────────────────────────────
+    _sub_lbl_tmpl = {"en": "{lbl} — Subtotal", "nl": "{lbl} — Subtotaal",
+                     "fr": "{lbl} — Sous-total"}
+    def _subtotal_label(gl_code):
+        lbl = _gl_map.get(gl_code, gl_code)
+        tmpl = _sub_lbl_tmpl.get(lang, _sub_lbl_tmpl["en"])
+        return tmpl.format(lbl=lbl)
+
+    def _write_subtotal_row(ws_obj, row_num, label, total, n_cols, a_ci):
+        BAND = "FF2E75B6"
+        for ci in range(1, n_cols + 1):
+            cell = ws_obj.cell(row_num, ci)
+            cell.fill   = _fill(BAND)
+            cell.border = _thin()
+        ws_obj.cell(row_num, 1).value     = label
+        ws_obj.cell(row_num, 1).font      = _font(bold=True, color=COL_WHT, size=9)
+        ws_obj.cell(row_num, 1).alignment = _aln("left")
+        if a_ci:
+            c = ws_obj.cell(row_num, a_ci)
+            c.value         = total
+            c.font          = _font(bold=True, color=COL_WHT, size=9)
+            c.number_format = "#,##0.00"
+            c.alignment     = _aln("right")
+        ws_obj.row_dimensions[row_num].height = 16
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -430,7 +476,7 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
     for ci, col in enumerate(display_cols, 1):
         ws.column_dimensions[get_column_letter(ci)].width = col_widths.get(col, max(len(str(col))+2, 12))
 
-    # ── Row 1: Title (dark blue, size 14, bold, merged) ───────────────────────
+    # ── Row 1: Title ──────────────────────────────────────────────────────────
     _acc = account_id or (
         str(df[acc_col].dropna().iloc[0]).strip().split(".")[0]
         if acc_col and len(df[acc_col].dropna()) > 0 else ""
@@ -449,7 +495,7 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
     ws.cell(1, 1).alignment = Alignment(horizontal="center", vertical="center", wrap_text=False)
     ws.row_dimensions[1].height = 34
 
-    # ── Row 2: Subtitle (mid blue, size 9) ───────────────────────────────────
+    # ── Row 2: Subtitle ───────────────────────────────────────────────────────
     BAND_FILL = "FF2E75B6"
     today_str = ref_ts.strftime("%d/%m/%Y")
     _sub = {"en": "Current open items  ·  Positive = invoices (red)  ·  Negative = credits / payments (green)",
@@ -479,46 +525,135 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
     r = 4
     amt_ci = (display_cols.index(amt_col) + 1) if amt_col and amt_col in display_cols else None
 
-    for row_idx, (_, row) in enumerate(df.iterrows()):
-        bg = ROW_WHITE if row_idx % 2 == 0 else ROW_BLUE
-        for ci, col in enumerate(display_cols, 1):
-            val = row.get(col, "")
-            if doc_type_col and col == doc_type_col:
-                pm  = row.get(pay_col, "") if pay_col else ""
-                val = _desc(val, row.get(amt_col, 0), pm, lang)
-            elif isinstance(val, pd.Timestamp):
-                val = val.to_pydatetime()
-            elif not isinstance(val, (str, int, float, _dt.datetime, type(None))):
-                val = str(val)
-            elif isinstance(val, float):
-                if val != val:   val = None
-                elif val == int(val): val = int(val)
-            is_amt = amt_col and col == amt_col
-            cell = ws.cell(r, ci, value=val if val != "" else None)
-            if is_amt and isinstance(val, (int, float)) and val is not None:
-                cell.font = _font(color=COL_POS if val > 0 else (COL_NEG if val < 0 else COL_BLK))
-                cell.number_format = "#,##0.00"
-                cell.alignment = _aln("right")
-            elif isinstance(val, _dt.datetime):
-                cell.font = _font()
-                cell.number_format = "DD/MM/YYYY"
-                cell.alignment = _aln("left")
+    # ── Data rows — group by GL category if multiple present ──────────────────
+    if _has_multi_cat and gl_col:
+        # Sort rows into buckets by GL category
+        _buckets = {}   # gl_code -> list of (idx, row)
+        _other   = []   # rows with unrecognised GL codes
+        for idx, row in df.iterrows():
+            gl_val = str(row.get(gl_col, "") or "").strip()
+            if gl_val in _categories_present:
+                _buckets.setdefault(gl_val, []).append((idx, row))
             else:
+                _other.append((idx, row))
+
+        row_idx_global = 0
+        _cat_totals = {}
+
+        for gl_code in sorted(_categories_present):
+            rows_in_cat = _buckets.get(gl_code, [])
+            cat_total   = 0.0
+            for idx, row in rows_in_cat:
+                bg = ROW_WHITE if row_idx_global % 2 == 0 else ROW_BLUE
+                for ci, col in enumerate(display_cols, 1):
+                    val = row.get(col, "")
+                    if doc_type_col and col == doc_type_col:
+                        val = _desc(val, row.get(amt_col, 0), row.get(pay_col, "") if pay_col else "", lang)
+                    elif gl_col and col == gl_col:
+                        val = _gl_label(val)
+                    elif isinstance(val, pd.Timestamp):
+                        val = val.to_pydatetime()
+                    elif not isinstance(val, (str, int, float, _dt.datetime, type(None))):
+                        val = str(val)
+                    elif isinstance(val, float):
+                        if val != val: val = None
+                        elif val == int(val): val = int(val)
+                    is_amt = amt_col and col == amt_col
+                    cell = ws.cell(r, ci, value=val if val != "" else None)
+                    if is_amt and isinstance(val, (int, float)) and val is not None:
+                        cat_total += float(val)
+                        cell.font = _font(color=COL_POS if val > 0 else (COL_NEG if val < 0 else COL_BLK))
+                        cell.number_format = "#,##0.00"
+                        cell.alignment = _aln("right")
+                    elif isinstance(val, _dt.datetime):
+                        cell.font = _font()
+                        cell.number_format = "DD/MM/YYYY"
+                        cell.alignment = _aln("left")
+                    else:
+                        cell.font = _font()
+                        cell.alignment = _aln("left")
+                    cell.fill = _fill(bg)
+                    cell.border = _thin()
+                ws.row_dimensions[r].height = 13
+                r += 1
+                row_idx_global += 1
+
+            _cat_totals[gl_code] = cat_total
+            _write_subtotal_row(ws, r, _subtotal_label(gl_code), cat_total, ncols, amt_ci)
+            r += 1
+
+        # Any rows with other GL codes
+        for idx, row in _other:
+            bg = ROW_WHITE if row_idx_global % 2 == 0 else ROW_BLUE
+            for ci, col in enumerate(display_cols, 1):
+                val = row.get(col, "")
+                if gl_col and col == gl_col:
+                    val = _gl_label(val)
+                elif isinstance(val, pd.Timestamp):
+                    val = val.to_pydatetime()
+                elif not isinstance(val, (str, int, float, _dt.datetime, type(None))):
+                    val = str(val)
+                elif isinstance(val, float):
+                    if val != val: val = None
+                    elif val == int(val): val = int(val)
+                cell = ws.cell(r, ci, value=val if val != "" else None)
+                cell.fill = _fill(bg)
+                cell.border = _thin()
                 cell.font = _font()
-                cell.alignment = _aln("left")
-            cell.fill = _fill(bg)
-            cell.border = _thin()
-        ws.row_dimensions[r].height = 13
-        r += 1
+            ws.row_dimensions[r].height = 13
+            r += 1
+            row_idx_global += 1
+
+        grand_total = sum(_cat_totals.values())
+        if _other and amt_col in df.columns:
+            grand_total += sum(float(row.get(amt_col, 0) or 0) for _, row in _other)
+
+    else:
+        # Single category or no GL column — flat display
+        grand_total = 0.0
+        for row_idx, (_, row) in enumerate(df.iterrows()):
+            bg = ROW_WHITE if row_idx % 2 == 0 else ROW_BLUE
+            for ci, col in enumerate(display_cols, 1):
+                val = row.get(col, "")
+                if doc_type_col and col == doc_type_col:
+                    pm  = row.get(pay_col, "") if pay_col else ""
+                    val = _desc(val, row.get(amt_col, 0), pm, lang)
+                elif gl_col and col == gl_col:
+                    val = _gl_label(val)
+                elif isinstance(val, pd.Timestamp):
+                    val = val.to_pydatetime()
+                elif not isinstance(val, (str, int, float, _dt.datetime, type(None))):
+                    val = str(val)
+                elif isinstance(val, float):
+                    if val != val:   val = None
+                    elif val == int(val): val = int(val)
+                is_amt = amt_col and col == amt_col
+                cell = ws.cell(r, ci, value=val if val != "" else None)
+                if is_amt and isinstance(val, (int, float)) and val is not None:
+                    grand_total += float(val)
+                    cell.font = _font(color=COL_POS if val > 0 else (COL_NEG if val < 0 else COL_BLK))
+                    cell.number_format = "#,##0.00"
+                    cell.alignment = _aln("right")
+                elif isinstance(val, _dt.datetime):
+                    cell.font = _font()
+                    cell.number_format = "DD/MM/YYYY"
+                    cell.alignment = _aln("left")
+                else:
+                    cell.font = _font()
+                    cell.alignment = _aln("left")
+                cell.fill = _fill(bg)
+                cell.border = _thin()
+            ws.row_dimensions[r].height = 13
+            r += 1
 
     # ── Grand total row ───────────────────────────────────────────────────────
-    grand_total = df[amt_col].sum() if amt_col and amt_col in df.columns else 0.0
+    _nb_lbl = {"en": "Net Balance", "nl": "Nettosaldo", "fr": "Solde net"}
     for ci in range(1, ncols + 1):
         cell = ws.cell(r, ci)
         cell.fill = _fill(HDR_FILL)
         cell.border = _thin()
         if ci == 1:
-            cell.value = "Net Balance"
+            cell.value = _nb_lbl.get(lang, "Net Balance")
             cell.font = _font(bold=True, color=COL_WHT, size=10)
             cell.alignment = _aln("left")
         elif ci == amt_ci:
