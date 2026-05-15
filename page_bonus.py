@@ -212,26 +212,40 @@ def _build_match_report(sap_df, bonus_df, sap_acc_col, bonus_acc_col,
 def _show_matching():
     st.markdown("### 📋 Customer matching")
     st.caption(
-        "Compare your SAP customer list with a bonus file. "
-        "Highlights which accounts match, which are missing, and adds SAP-only accounts to the output."
+        "Upload your bonus/payout file and the BEBON payment run file from your colleague. "
+        "Shows which BEBON accounts are in your bonus file, which are missing, and which "
+        "are in your file but not in the BEBON run."
     )
 
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown("**Your SAP export** (FBL5N or customer list)")
-        sap_file = st.file_uploader("SAP", type=["xlsx","xls","xlsm"],
+        st.markdown("**Your bonus/payout file** (all sheets will be checked)")
+        sap_file = st.file_uploader("Bonus file", type=["xlsx","xls","xlsm"],
                                     label_visibility="collapsed", key="bon_sap")
     with c2:
-        st.markdown("**Bonus / partner file**")
-        bonus_file = st.file_uploader("Bonus", type=["xlsx","xls","xlsm"],
+        st.markdown("**BEBON payment run file** (from colleague)")
+        bonus_file = st.file_uploader("BEBON file", type=["xlsx","xls","xlsm"],
                                       label_visibility="collapsed", key="bon_bonus")
 
     if not sap_file or not bonus_file:
         return
 
     try:
-        sap_df   = pd.read_excel(sap_file,   dtype=str, engine="openpyxl")
+        # Read ALL sheets from the bonus file and combine them
+        bonus_sheets = pd.read_excel(sap_file, sheet_name=None,
+                                     dtype=str, engine="openpyxl")
+        sap_df = pd.concat(
+            [df for df in bonus_sheets.values()],
+            ignore_index=True
+        )
+        sap_df.columns = [str(c).strip() for c in sap_df.columns] \
+            if len(sap_df.columns) > 0 else sap_df.columns
+
         bonus_df = pd.read_excel(bonus_file, dtype=str, engine="openpyxl")
+        bonus_df.columns = [str(c).strip() for c in bonus_df.columns]
+        sheets_used = list(bonus_sheets.keys())
+        st.info(f"Bonus file sheets used: {', '.join(sheets_used)} "
+                f"({len(sap_df)} total rows combined)")
     except Exception as e:
         st.error(f"Could not read files: {e}")
         return
@@ -242,14 +256,14 @@ def _show_matching():
     sc1, sc2 = st.columns(2)
     with sc1:
         sap_acc_col = st.selectbox(
-            "Account column in SAP file",
+            "Account column in YOUR bonus file",
             sap_df.columns.tolist(),
             index=sap_df.columns.tolist().index(sap_acc_col) if sap_acc_col else 0,
             key="bon_sap_col"
         )
     with sc2:
         bonus_acc_col = st.selectbox(
-            "Account column in bonus file",
+            "Account column in BEBON file",
             bonus_df.columns.tolist(),
             index=bonus_df.columns.tolist().index(bonus_acc_col) if bonus_acc_col else 0,
             key="bon_bonus_col"
@@ -529,7 +543,6 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
     summary = {
         "X payouts — clean (no block)":       len(x_clean),
         "X payouts — BLOCKED (B or U)":       len(x_blocked),
-        "B-blocked items":                     len(b_blocked),
         "X accounts with open blockers":       len({r["Account"] for r in x_account_blockers}),
         "RS-bonus ready for payout review":    len(rs_ready_review),
     }
@@ -627,6 +640,18 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
     ok_rows_df = df[df[acc_col].apply(lambda v: str(v).strip().split(".")[0].lstrip("0").zfill(8) if acc_col else "").isin(ok_accs)].copy() if acc_col else df.iloc[0:0]
     if acc_col:
         ok_rows_df = ok_rows_df.sort_values(acc_col)
+    # Strictly exclude any row with a B or U payment block from the OK sheet
+    if pay_block_col and pay_block_col in ok_rows_df.columns:
+        ok_rows_df = ok_rows_df[
+            ~ok_rows_df[pay_block_col].astype(str).str.strip().str.upper().isin(["B","U"])
+        ]
+    # Strictly exclude any positive RS rows (these are blockers, not clean X payouts)
+    if doc_type_col and doc_type_col in ok_rows_df.columns and amt_col and amt_col in ok_rows_df.columns:
+        is_pos_rs = (
+            ok_rows_df[doc_type_col].astype(str).str.strip().str.upper().str.startswith("RS") &
+            (pd.to_numeric(ok_rows_df[amt_col], errors="coerce").fillna(0) > 0)
+        )
+        ok_rows_df = ok_rows_df[~is_pos_rs]
     for ri, (_, row) in enumerate(ok_rows_df.iterrows()):
         r = 3 + ri
         # Colour: X rows green, others white/grey
@@ -653,9 +678,6 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
     _write_sheet("X Payouts — BLOCKED", x_blocked,
         ["Account","Name","Amount","Due","Payment Block","Status","Payout Y/N","Issue"],
         lambda i: RED_HL)
-    _write_sheet("B-Blocked Items", b_blocked,
-        ["Account","Name","Amount","Due","Payment Method","Status","Issue"],
-        lambda i: ORANGE_HL)
     _write_sheet("X Account Blockers", x_account_blockers,
         ["Account","Name","Document Type","Amount","Due","Arrears","Issue"],
         lambda i: RED_HL)
@@ -671,7 +693,7 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
     ws_s.column_dimensions["A"].width = 35
     ws_s.column_dimensions["B"].width = 14
     for ri, (label, val) in enumerate(summary.items(), 3):
-        has_issue = val > 0 and ("BLOCKED" in label or "B-blocked" in label or "Open" in label)
+        has_issue = val > 0 and ("BLOCKED" in label or "Open" in label)
         rf = RED_HL if has_issue else (GREEN_HL if val == 0 else GREY)
         ws_s.cell(ri, 1, value=label).font = _font(size=10)
         ws_s.cell(ri, 2, value=val).font   = _font(bold=True, size=10)
@@ -746,19 +768,14 @@ def _show_payout_checker():
     m2.metric("🚫 X payouts blocked", summary.get("X payouts — BLOCKED (B or U)", 0),
               delta="needs action" if summary.get("X payouts — BLOCKED (B or U)",0) > 0 else None,
               delta_color="inverse")
-    m3.metric("🔴 B-blocked items",   summary.get("B-blocked items", 0),
-              delta="needs action" if summary.get("B-blocked items",0) > 0 else None,
-              delta_color="inverse")
-    m4.metric("⛔ X acct blockers",
-              summary.get("X accounts with open blockers", 0),
+    m3.metric("⛔ X acct blockers",   summary.get("X accounts with open blockers", 0),
               delta="check before payout" if summary.get("X accounts with open blockers",0) > 0 else None,
               delta_color="inverse")
+    m4.metric("💡 RS ready review",   summary.get("RS-bonus ready for payout review", 0))
 
 
     if summary.get("X payouts — BLOCKED (B or U)", 0) > 0:
         st.error(f"🚫 {summary['X payouts — BLOCKED (B or U)']} X payout(s) have a B or U block — remove the block before the payout run.")
-    if summary.get("B-blocked items", 0) > 0:
-        st.warning(f"⚠ {summary['B-blocked items']} item(s) have a Payment Block B.")
     if summary.get("X accounts with open blockers", 0) > 0:
         n_acc = summary['X accounts with open blockers']
         st.error(f"⛔ {n_acc} account(s) with an X payout have positive RS or RU rows — resolve before payout. See 'X Account Blockers' sheet.")
