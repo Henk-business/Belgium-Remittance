@@ -325,8 +325,40 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
     - X payouts: flag B or U payment blocks
     - B-blocked items: any row with Payment Block B
     - Open invoices on or before cutoff date
+    Only includes accounts managed by the defined clerk codes.
     """
-    is_bonus = False  # Tab 2 always treats file as SAP export
+    # ── Allowed clerk codes ───────────────────────────────────────────────
+    ALLOWED_CLERKS = set()
+    # C1–C7
+    for i in range(1, 8):   ALLOWED_CLERKS.add(f"C{i}")
+    # B1–B9
+    for i in range(1, 10):  ALLOWED_CLERKS.add(f"B{i}")
+    # N1, N2
+    for i in range(1, 3):   ALLOWED_CLERKS.add(f"N{i}")
+    # P1, P2, P3, P4, P5, P6
+    for i in range(1, 7):   ALLOWED_CLERKS.add(f"P{i}")
+    # F1–F5
+    for i in range(1, 6):   ALLOWED_CLERKS.add(f"F{i}")
+    # I1–I6
+    for i in range(1, 7):   ALLOWED_CLERKS.add(f"I{i}")
+    # A1–A8
+    for i in range(1, 9):   ALLOWED_CLERKS.add(f"A{i}")
+    # D1–D6
+    for i in range(1, 7):   ALLOWED_CLERKS.add(f"D{i}")
+    # H1–H7
+    for i in range(1, 8):   ALLOWED_CLERKS.add(f"H{i}")
+    # Z1–Z9
+    for i in range(1, 10):  ALLOWED_CLERKS.add(f"Z{i}")
+    # 70–75
+    for i in range(70, 76): ALLOWED_CLERKS.add(str(i))
+    # 90
+    ALLOWED_CLERKS.add("90")
+    # W1–W8
+    for i in range(1, 9):   ALLOWED_CLERKS.add(f"W{i}")
+    # X1, X2
+    for i in range(1, 3):   ALLOWED_CLERKS.add(f"X{i}")
+
+    is_bonus = False
     col_map   = {c.lower().strip(): c for c in df.columns}
 
     # Column detection
@@ -346,8 +378,19 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
                           if "other open" in k or "open item" in k), None)
     doc_type_col  = next((col_map[k] for k in col_map
                           if "document type" in k or "belegtyp" in k), None)
+    clerk_col     = next((col_map[k] for k in col_map
+                          if "clerk" in k or "sachbearbeiter" in k
+                          or k in ("clerk abbreviation", "clerk_abbreviation")), None)
 
     df = df.copy()
+
+    # ── Apply clerk filter ────────────────────────────────────────────────
+    # Keep only rows whose clerk abbreviation is in the allowed set.
+    # Rows with blank/missing clerk are excluded (unassigned accounts).
+    if clerk_col and clerk_col in df.columns:
+        clerk_vals = df[clerk_col].astype(str).str.strip().str.upper()
+        df = df[clerk_vals.isin(ALLOWED_CLERKS)].copy()
+
     if due_col:
         df[due_col] = pd.to_datetime(df[due_col], errors="coerce")
     if amt_col:
@@ -673,11 +716,13 @@ def _show_payout_checker():
             with st.spinner("Analysing…"):
                 try:
                     df = pd.read_excel(sap_file, dtype=str, engine="openpyxl")
+                    total_rows = len(df)
                     today_str = datetime.date.today().strftime("%d/%m/%Y")
                     result, summary = _build_payout_report(df, cutoff, today_str)
-                    st.session_state["pbc_result"]  = result
-                    st.session_state["pbc_summary"] = summary
-                    st.session_state["pbc_cutoff_s"] = cutoff
+                    st.session_state["pbc_result"]     = result
+                    st.session_state["pbc_summary"]    = summary
+                    st.session_state["pbc_cutoff_s"]   = cutoff
+                    st.session_state["pbc_total_rows"] = total_rows
                 except Exception as e:
                     st.error(f"Error: {e}")
                     import traceback
@@ -689,7 +734,13 @@ def _show_payout_checker():
     result  = st.session_state["pbc_result"]
     summary = st.session_state["pbc_summary"]
     cutoff  = st.session_state.get("pbc_cutoff_s", cutoff)
+    total_rows = st.session_state.get("pbc_total_rows", 0)
     st.markdown("---")
+    st.caption(
+        f"Filtered to allowed clerk codes (C1–C7, B1–B9, N1–N2, P1–P6, F1–F5, I1–I6, "
+        f"A1–A8, D1–D6, H1–H7, Z1–Z9, 70–75, 90, W1–W8, X1–X2). "
+        f"{total_rows} rows in upload."
+    )
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("✅ X payouts clean",   summary.get("X payouts — clean (no block)", 0))
     m2.metric("🚫 X payouts blocked", summary.get("X payouts — BLOCKED (B or U)", 0),
