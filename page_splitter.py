@@ -130,16 +130,26 @@ def show():
     with c2:
         ref_date = st.date_input("Reference date (global)", value=datetime.date.today(), key="spl_refdate")
 
+    # ── Sync per-account dates when global date changes ────────────────────
+    # Whenever the global ref_date changes, reset ALL per-account keys to match
+    # so the expander always opens with each account on the global date.
+    # The collector can then individually override only the ones they need.
+    last_ref = st.session_state.get("spl_last_refdate")
+    if last_ref != ref_date:
+        # Global date changed — reset all per-account overrides
+        for acc in accounts:
+            st.session_state[f"spl_acc_date_{acc}"] = ref_date
+        st.session_state["spl_last_refdate"] = ref_date
+
     # ── Per-account date overrides ─────────────────────────────────────────
-    # Only shown when remove_not_due is ticked and there are multiple accounts
     if remove_not_due and len(accounts) > 1:
         with st.expander(
-            f"⚙️ Per-account date overrides — set a different cut-off date per account",
+            "⚙️ Per-account date overrides — set a different cut-off date per account",
             expanded=False,
         ):
             st.caption(
-                "Each account defaults to the global reference date above. "
-                "Change individual accounts if they need a different cut-off."
+                "All accounts start on the global date above. "
+                "Open this section to override individual accounts if needed."
             )
             for i in range(0, len(accounts), 3):
                 row_accounts = accounts[i:i+3]
@@ -150,11 +160,10 @@ def show():
                             f"`{acc}`",
                             value=st.session_state.get(f"spl_acc_date_{acc}", ref_date),
                             key=f"spl_acc_date_{acc}",
-                            help=f"Cut-off date for account {acc}.",
+                            help=f"Cut-off date for account {acc}. Defaults to global date.",
                         )
 
-    # Build per_account_dates from session_state — reliable at generate time
-    # regardless of whether the expander was open or closed
+    # Build per_account_dates from session_state
     per_account_dates = {}
     if remove_not_due:
         for acc in accounts:
