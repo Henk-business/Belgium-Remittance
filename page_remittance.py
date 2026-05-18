@@ -258,7 +258,9 @@ def _show_amount_match():
                     st.session_state["amt_matches"]  = matches
                     st.session_state["amt_pmt_s"]      = float(pmt_amt)
                     st.session_state["amt_cname_s"]    = cname.strip()
-                    st.session_state["amt_n_open"]   = len(sap_df[sap_df["is_open"]])
+                    st.session_state["amt_n_open"] = len(
+                        sap_df[sap_df["is_open"] & sap_df["amount"].notna() & (sap_df["amount"] != 0)]
+                    )
                 except Exception as e:
                     st.error(f"Error: {e}")
                     import traceback
