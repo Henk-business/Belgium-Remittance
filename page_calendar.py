@@ -51,11 +51,10 @@ FORMAT_OPTS = ["", "DD", "Manual"]
 
 # ── Main show() ───────────────────────────────────────────────────────────
 def show():
-    from abi_ui import page_header, today_bar
+    from abi_ui import page_header
     page_header("AR Calendar",
                 "Monthly schedules — direct debits, overviews, UAC and meetings.",
                 "📅")
-    today_bar()
 
     today = datetime.date.today()
 
