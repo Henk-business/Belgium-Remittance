@@ -283,6 +283,28 @@ def show():
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True, key="spl_dl_all",
     )
+
+    # ── Download as separate workbooks (one xlsx per account, zipped) ─────
+    import zipfile, io as _io
+    def _build_separate_zip():
+        zip_buf = _io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for acc, acc_df in account_data.items():
+                wb_single = build_split_workbook(
+                    {acc: acc_df}, amount_col,
+                    today=ref_date, lang=dl_lang
+                )
+                zf.writestr(f"{acc}_{safe_date}.xlsx", wb_single.getvalue())
+        zip_buf.seek(0)
+        return zip_buf.getvalue()
+
+    st.download_button(
+        "⬇  Download as separate workbooks (one file per account, ZIP)",
+        data=_build_separate_zip(),
+        file_name=f"Accounts_Separate_{safe_date}.zip",
+        mime="application/zip",
+        use_container_width=True, key="spl_dl_separate",
+    )
     # ── Build account group mapping ──────────────────────────────────────────
     # Groups: {primary_id: {accounts:[...], label:..., tmpl_bytes:...}}
     group_map    = {}  # acc_id -> primary_id (which group it belongs to)
