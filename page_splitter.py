@@ -243,9 +243,7 @@ def show():
     # Reset exclusions if a new split was just run (account_data keys changed)
     current_accs = set(str(a) for a in account_data.keys())
     st.session_state["spl_excluded"] = st.session_state["spl_excluded"] & current_accs
-
     excluded = st.session_state["spl_excluded"]
-    active_accounts = {acc: df for acc, df in account_data.items() if str(acc) not in excluded}
 
     if excluded:
         st.caption(f"⚠ {len(excluded)} account(s) excluded from downloads — click ↩ to restore")
@@ -297,7 +295,13 @@ def show():
         st.caption("⚙ = per-account date override applied")
 
     # Use only active (non-excluded) accounts for all downloads
-    account_data = active_accounts
+    account_data = {acc: df for acc, df in account_data.items()
+                    if str(acc) not in excluded}
+
+    if not account_data:
+        st.warning("All accounts are excluded. Restore at least one account to download.")
+        _template_manager()
+        return
 
     # ── SECTION 1: DOWNLOADS ────────────────────────────────────────
     st.markdown("---")
