@@ -209,12 +209,16 @@ def _recalc_arrears_df(df, today):
         except Exception:
             df.loc[mask, arr_col] = days.astype(str)
     return df
-def build_split_workbook(account_data, amount_col, today=None, title_prefix="", templates=None, lang="en"):
+def build_split_workbook(account_data, amount_col, today=None, title_prefix="", templates=None, lang="en", per_account_dates=None):
     if today is None:
         today = datetime.date.today()
+    per_account_dates = per_account_dates or {}
     today_str = pd.Timestamp(today).strftime("%d/%m/%Y")
-    # Recalculate arrears for each account df based on reference date
-    account_data = {acc: _recalc_arrears_df(df, today) for acc, df in account_data.items()}
+    # Recalculate arrears per account using that account's specific reference date
+    account_data = {
+        acc: _recalc_arrears_df(df, per_account_dates.get(str(acc), today))
+        for acc, df in account_data.items()
+    }
     # Translate Document Type codes to human-readable descriptions
     account_data = {acc: translate_doc_types(df, lang) for acc, df in account_data.items()}
 
@@ -275,13 +279,17 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
         ws = wb.create_sheet(title=tab_name)
         ncols = len(acc_df.columns)
 
+        # Use per-account date if available, otherwise global date
+        acc_today = per_account_dates.get(str(acc), today)
+        acc_today_str = pd.Timestamp(acc_today).strftime("%d/%m/%Y")
+
         r2 = 1
         mr(ws, r2, 1, ncols, "Account: " + str(acc),
            bold=True, bg="dk_blue", fg="white", sz=13, ha="center")
         ws.row_dimensions[r2].height = 32
         r2 += 1
         mr(ws, r2, 1, ncols,
-           today_str + "  \u00b7  " + f"{len(acc_df):,}" + " lines  \u00b7  Invoices not yet due removed",
+           acc_today_str + "  \u00b7  " + f"{len(acc_df):,}" + " lines  \u00b7  Invoices not yet due removed",
            bg="md_blue", fg="white", sz=9, ha="center")
         ws.row_dimensions[r2].height = 16
         r2 += 2

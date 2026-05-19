@@ -325,6 +325,11 @@ def show():
             account_data, amount_col, today=ref_date, lang=dl_lang,
             per_account_dates=per_acc_dates
         )
+    except TypeError:
+        # Older splitter_engine without per_account_dates param
+        _translated_all = build_split_workbook(
+            account_data, amount_col, today=ref_date, lang=dl_lang
+        )
     except Exception as _e:
         st.error(f"Could not build combined workbook: {_e}")
         _template_manager()
