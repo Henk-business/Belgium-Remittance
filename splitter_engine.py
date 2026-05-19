@@ -11,6 +11,65 @@ warnings.filterwarnings("ignore")
 from common import BG, FG, c, mr, col_w, hdr_row, fd, auto_widths, clean_id
 from template_manager import apply_template
 
+# ── COLUMN HEADER TRANSLATIONS ────────────────────────────────────────────────
+_COL_HEADERS = {
+    "en": {
+        "Account":                    "Account",
+        "Assignment":                 "Assignment",
+        "Document Number":            "Document Number",
+        "Reference Key 3":            "Reference Key 3",
+        "Document Date":              "Document Date",
+        "Net due date":               "Net due date",
+        "Document Type":              "Description",
+        "Amount in local currency":   "Amount in local currency",
+        "Arrears after net due date": "Arrears after net due date",
+        "Payment Method":             "Payment Method",
+        "G/L Account":                "G/L Account",
+    },
+    "nl": {
+        "Account":                    "Rekening",
+        "Assignment":                 "Toewijzing",
+        "Document Number":            "Documentnummer",
+        "Reference Key 3":            "Referentie 3",
+        "Document Date":              "Documentdatum",
+        "Net due date":               "Netto vervaldatum",
+        "Document Type":              "Omschrijving",
+        "Amount in local currency":   "Bedrag in lokale valuta",
+        "Arrears after net due date": "Achterstand na vervaldatum",
+        "Payment Method":             "Betaalmethode",
+        "G/L Account":                "Grootboekrekening",
+    },
+    "fr": {
+        "Account":                    "Compte",
+        "Assignment":                 "Affectation",
+        "Document Number":            "Numéro de document",
+        "Reference Key 3":            "Clé de référence 3",
+        "Document Date":              "Date du document",
+        "Net due date":               "Date d'échéance nette",
+        "Document Type":              "Description",
+        "Amount in local currency":   "Montant en devise locale",
+        "Arrears after net due date": "Arriérés après échéance",
+        "Payment Method":             "Mode de paiement",
+        "G/L Account":                "Compte général",
+    },
+}
+
+def _col_header(col_name: str, lang: str = "en") -> str:
+    """Return translated column header for a given language."""
+    mapping = _COL_HEADERS.get(lang, _COL_HEADERS["en"])
+    # Exact match first
+    if col_name in mapping:
+        return mapping[col_name]
+    # Case-insensitive fallback
+    col_lower = col_name.lower()
+    for k, v in mapping.items():
+        if k.lower() == col_lower:
+            return v
+    # Document Type catch-all (always → Description regardless of language label)
+    if "document type" in col_lower:
+        return mapping.get("Document Type", "Description")
+    return col_name
+
 # ── DOCUMENT TYPE TRANSLATION ─────────────────────────────────────────────────
 _DOC_LABELS = {
     "en": {"RV+":"Invoice","RV-":"Credit note","ZP":"Payment","DZ":"Payment",
@@ -288,8 +347,11 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
         acc_today_str  = pd.Timestamp(acc_today).strftime("%d/%m/%Y")
         acc_lang       = per_account_langs.get(str(acc), lang)
 
+        _acc_title_lbl = {"en": "Account", "nl": "Rekening", "fr": "Compte"}.get(acc_lang, "Account")
+        _total_lbl     = {"en": "TOTAL",   "nl": "TOTAAL",   "fr": "TOTAL"  }.get(acc_lang, "TOTAL")
+
         r2 = 1
-        mr(ws, r2, 1, ncols, "Account: " + str(acc),
+        mr(ws, r2, 1, ncols, f"{_acc_title_lbl}: " + str(acc),
            bold=True, bg="dk_blue", fg="white", sz=13, ha="center")
         ws.row_dimensions[r2].height = 32
         r2 += 1
@@ -305,7 +367,8 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
         r2 += 2
 
         for ci, col_name in enumerate(acc_df.columns, 1):
-            display_name = "Description" if "document type" in str(col_name).lower() else str(col_name)
+            # Translate column headers to the account's language
+            display_name = _col_header(col_name, acc_lang)
             cell = ws.cell(row=r2, column=ci, value=display_name)
             cell.font = Font(name="Arial", bold=True, color="FFFFFF", size=9)
             cell.fill = PatternFill("solid", fgColor=BG["md_blue"])
@@ -363,7 +426,7 @@ def build_split_workbook(account_data, amount_col, today=None, title_prefix="", 
             ws.row_dimensions[ri].height = 13
 
         total_r = r2 + len(acc_df)
-        c(ws, total_r, 1, "TOTAL", bold=True, bg="dk_blue", fg="white", sz=10)
+        c(ws, total_r, 1, _total_lbl, bold=True, bg="dk_blue", fg="white", sz=10)
         for ci in range(2, ncols + 1):
             c(ws, total_r, ci, None, bg="dk_blue")
         if amount_ci:
