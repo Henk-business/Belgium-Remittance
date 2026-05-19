@@ -295,7 +295,7 @@ def show():
         st.caption("⚙ = per-account date override applied")
 
     # Use only active (non-excluded) accounts for all downloads
-    account_data = {acc: df for acc, df in account_data.items()
+    account_data = {acc: df.reset_index(drop=True) for acc, df in account_data.items()
                     if str(acc) not in excluded}
 
     if not account_data:
@@ -320,12 +320,15 @@ def show():
             help="Translates Document Type column: Invoice, Credit note, Payment, etc.",
         )
 
-    # Build the combined workbook with the selected language (happens on every render,
-    # cheap enough for typical account counts).
-    _translated_all = build_split_workbook(
-        account_data, amount_col, today=ref_date, lang=dl_lang,
-        per_account_dates=per_acc_dates
-    )
+    try:
+        _translated_all = build_split_workbook(
+            account_data, amount_col, today=ref_date, lang=dl_lang,
+            per_account_dates=per_acc_dates
+        )
+    except Exception as _e:
+        st.error(f"Could not build combined workbook: {_e}")
+        _template_manager()
+        return
 
     st.download_button(
         "⬇  Download all accounts (standard layout)",
