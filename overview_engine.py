@@ -295,8 +295,6 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
                             reference_date=None,
                             remove_not_due: bool = False,
                             remove_overdues: bool = False,
-                            month_from: int = 1,
-                            month_to: int = 12,
                             account_id: str = "",
                             customer_name: str = "",
                             lang: str = "en") -> BytesIO:
@@ -307,8 +305,7 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
 
     remove_not_due: removes rows where net due date > reference_date (not yet due)
     remove_overdues: removes rows where net due date < reference_date (already overdue)
-    month_from/month_to: filter by net due date month range
-    """
+"""
     import datetime as _dt
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
@@ -372,10 +369,6 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
         due = df[ndd_col]
         df = df[due.isna() | (due >= ref_ts)].copy()
 
-    # ── Month range filter ────────────────────────────────────────────────────
-    if (month_from != 1 or month_to != 12) and ndd_col:
-        due_m = df[ndd_col].dt.month
-        df = df[due_m.isna() | ((due_m >= month_from) & (due_m <= month_to))].copy()
 
     # ── Group into clearing-doc groups using assignment/document grouping ──────
     # For the flat current overview we treat rows as one big group — no SAP

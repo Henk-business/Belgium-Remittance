@@ -134,9 +134,6 @@ def show():
                           key="ov_acc_disp_w", disabled=True)
 
     # ── Mode-specific settings ────────────────────────────────────────────────
-    _month_names = ['January','February','March','April','May','June',
-                    'July','August','September','October','November','December']
-
     if single_mode:
         sc1, sc2 = st.columns(2)
         with sc1:
@@ -153,27 +150,7 @@ def show():
         year_from = year_to = yr_max
         month_from, month_to = 1, 12
 
-        mc0, mc1, mc2, _ = st.columns([1, 1, 1, 1])
-        with mc0:
-            use_month_filter = st.checkbox(
-                "Filter by month range", value=False, key="ov_use_months",
-            )
-        with mc1:
-            month_from = st.selectbox(
-                "From month", list(range(1, 13)),
-                format_func=lambda x: _month_names[x-1],
-                index=0, key="ov_month_from",
-                disabled=not use_month_filter,
-            )
-        with mc2:
-            month_to = st.selectbox(
-                "To month", list(range(1, 13)),
-                format_func=lambda x: _month_names[x-1],
-                index=datetime.date.today().month - 1, key="ov_month_to",
-                disabled=not use_month_filter,
-            )
-        if not use_month_filter:
-            month_from, month_to = 1, 12
+
     else:
         ref_date       = datetime.date.today()
         remove_not_due = False
@@ -260,8 +237,6 @@ def show():
                         reference_date=ref_date,
                         remove_not_due=remove_not_due,
                         remove_overdues=remove_overdues,
-                        month_from=month_from,
-                        month_to=month_to,
                         account_id=(account_filter if account_filter != "All accounts" else ""),
                         customer_name=customer_name.strip(),
                         lang=lang,
