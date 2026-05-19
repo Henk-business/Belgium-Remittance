@@ -200,6 +200,21 @@ def show():
                         reference_date=ref_date,
                         per_account_dates=per_account_dates,
                     )
+
+                    # Look up language + name per account from customer_languages.py
+                    try:
+                        from customer_languages import get_customer
+                        per_account_langs = {}
+                        per_account_names = {}
+                        for acc in account_data.keys():
+                            info = get_customer(str(acc))
+                            if info:
+                                per_account_langs[str(acc)] = info["lang"]
+                                per_account_names[str(acc)] = info["name"]
+                    except ImportError:
+                        per_account_langs = {}
+                        per_account_names = {}
+
                     # Build the combined workbook — standard layout for all accounts.
                     wb_bytes = build_split_workbook(account_data, amount_col, today=ref_date)
                     st.session_state["spl_result"]           = wb_bytes
@@ -207,6 +222,8 @@ def show():
                     st.session_state["spl_ref_date"]         = ref_date
                     st.session_state["spl_amount_col"]       = amount_col
                     st.session_state["spl_per_acc_dates"]    = per_account_dates
+                    st.session_state["spl_per_acc_langs"]    = per_account_langs
+                    st.session_state["spl_per_acc_names"]    = per_account_names
                     # Pre-fetch which accounts have templates so we can show a notice
                     has_templates = []
                     for acc_check in account_data.keys():
@@ -227,12 +244,14 @@ def show():
         return
 
     # ── RESULTS ───────────────────────────────────────────────────────────────
-    account_data = st.session_state["spl_account_data"]
-    ref_date     = st.session_state["spl_ref_date"]
-    amount_col   = st.session_state["spl_amount_col"]
+    account_data  = st.session_state["spl_account_data"]
+    ref_date      = st.session_state["spl_ref_date"]
+    amount_col    = st.session_state["spl_amount_col"]
     per_acc_dates = st.session_state.get("spl_per_acc_dates", {})
-    today_str    = pd.Timestamp(ref_date).strftime("%d/%m/%Y")
-    safe_date    = str(ref_date).replace("-", "")
+    per_acc_langs = st.session_state.get("spl_per_acc_langs", {})
+    per_acc_names = st.session_state.get("spl_per_acc_names", {})
+    today_str     = pd.Timestamp(ref_date).strftime("%d/%m/%Y")
+    safe_date     = str(ref_date).replace("-", "")
 
     st.markdown("---")
     st.success(f"Done — {len(account_data)} account sheets generated")
@@ -249,8 +268,8 @@ def show():
         st.caption(f"⚠ {len(excluded)} account(s) excluded from downloads — click ↩ to restore")
 
     # ── Summary table with exclude buttons ────────────────────────────────
-    hdr_cols = st.columns([2, 2, 1, 2, 1])
-    for col, lbl in zip(hdr_cols, ["Account", "Reference date", "Lines", "Total (€)", ""]):
+    hdr_cols = st.columns([2, 2, 2, 1, 2, 1])
+    for col, lbl in zip(hdr_cols, ["Account", "Name", "Reference date", "Lines", "Total (€)", ""]):
         col.markdown(f"<span style='font-size:12px;font-weight:700;color:#7A7065;'>{lbl}</span>",
                      unsafe_allow_html=True)
     st.markdown("<hr style='margin:4px 0 6px;border-color:#E8E3DC;'>", unsafe_allow_html=True)
@@ -262,26 +281,31 @@ def show():
         acc_date_str = pd.Timestamp(acc_date).strftime("%d/%m/%Y")
         date_label = f"{acc_date_str} ⚙" if str(acc) in per_acc_dates else acc_date_str
         total_str = f"{total:,.2f}" if total is not None else "—"
-
+        cust_name = per_acc_names.get(str(acc), "")
+        cust_lang = per_acc_langs.get(str(acc), "")
+        lang_flag = {"nl": "🇳🇱", "fr": "🇫🇷", "en": "🇬🇧"}.get(cust_lang, "")
         row_style = "opacity:0.35;" if is_excluded else ""
-        rc = st.columns([2, 2, 1, 2, 1])
+
+        rc = st.columns([2, 2, 2, 1, 2, 1])
         with rc[0]:
             st.markdown(
-                f"<span style='font-size:13px;font-weight:600;color:#0A0A0A;{row_style}'>"
-                f"{'~~' if is_excluded else ''}{acc}{'~~' if is_excluded else ''}</span>",
-                unsafe_allow_html=True
-            )
+                f"<span style='font-size:13px;font-weight:600;color:#0A0A0A;{row_style}'>{acc}</span>",
+                unsafe_allow_html=True)
         with rc[1]:
+            st.markdown(
+                f"<span style='font-size:12px;color:#3A3530;{row_style}'>{lang_flag} {cust_name}</span>",
+                unsafe_allow_html=True)
+        with rc[2]:
             st.markdown(f"<span style='font-size:13px;color:#5A5550;{row_style}'>{date_label}</span>",
                         unsafe_allow_html=True)
-        with rc[2]:
+        with rc[3]:
             st.markdown(f"<span style='font-size:13px;color:#5A5550;{row_style}'>{len(acc_df)}</span>",
                         unsafe_allow_html=True)
-        with rc[3]:
+        with rc[4]:
             color = "#C41230" if total and total < 0 else "#0A0A0A"
             st.markdown(f"<span style='font-size:13px;font-weight:600;color:{color};{row_style}'>{total_str}</span>",
                         unsafe_allow_html=True)
-        with rc[4]:
+        with rc[5]:
             if is_excluded:
                 if st.button("↩", key=f"spl_restore_{acc}", help=f"Restore {acc}"):
                     st.session_state["spl_excluded"].discard(str(acc))
@@ -323,7 +347,7 @@ def show():
     try:
         _translated_all = build_split_workbook(
             account_data, amount_col, today=ref_date, lang=dl_lang,
-            per_account_dates=per_acc_dates
+            per_account_dates=per_acc_dates, per_account_langs=per_acc_langs
         )
     except TypeError:
         # Older splitter_engine without per_account_dates param
@@ -352,7 +376,7 @@ def show():
                 wb_single = build_split_workbook(
                     {acc: acc_df}, amount_col,
                     today=per_acc_dates.get(str(acc), ref_date),
-                    lang=dl_lang, per_account_dates=per_acc_dates
+                    lang=dl_lang, per_account_dates=per_acc_dates, per_account_langs=per_acc_langs
                 )
                 zf.writestr(f"{acc}_{safe_date}.xlsx", wb_single.getvalue())
         zip_buf.seek(0)

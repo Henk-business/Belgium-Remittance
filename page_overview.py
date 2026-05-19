@@ -107,20 +107,37 @@ def show():
         )
     single_mode = ov_mode.startswith("📋")
 
+    # ── Auto-lookup from customer_languages ───────────────────────────────────
+    # When a single account is detected (or selected), auto-fill language and name
+    _single_acc = accounts[0] if len(accounts) == 1 else None
+    _auto_lang  = "en"
+    _auto_name  = detect_customer_name(df_raw) if "df_raw" in dir() else ""
+    try:
+        from customer_languages import get_customer
+        if _single_acc:
+            _info = get_customer(_single_acc)
+            if _info:
+                _auto_lang = _info["lang"]
+                _auto_name = _info["name"] if not _auto_name else _auto_name
+    except ImportError:
+        pass
+
     # ── Row 1: always-visible settings ───────────────────────────────────────
     r1a, r1b, r1c = st.columns(3)
     with r1a:
+        _lang_opts = ["en","nl","fr"]
+        _lang_idx  = _lang_opts.index(_auto_lang) if _auto_lang in _lang_opts else 0
         lang = st.selectbox(
-            "Language", ["en","nl","fr"],
+            "Language", _lang_opts,
             format_func=lambda x: {"en":"🇬🇧 English","nl":"🇳🇱 Dutch","fr":"🇫🇷 French"}[x],
+            index=_lang_idx,
             key="ov_lang_w",
         )
     with r1b:
-        _auto_cname = detect_customer_name(df_raw) if "df_raw" in dir() else ""
         customer_name = st.text_input(
             "Customer name", key="ov_cname_w",
             placeholder="e.g. ACME Corp",
-            value=st.session_state.get("ov_cname_detected", _auto_cname),
+            value=st.session_state.get("ov_cname_detected", _auto_name),
         )
     with r1c:
         if len(accounts) > 1:
@@ -128,6 +145,19 @@ def show():
                 "Account", ["All accounts"] + accounts,
                 key="ov_acc_w",
             )
+            # When a specific account is selected, look up its language
+            if account_filter != "All accounts":
+                try:
+                    from customer_languages import get_customer
+                    _sel_info = get_customer(account_filter)
+                    if _sel_info and _sel_info["lang"] != lang:
+                        st.caption(
+                            f"💡 Language for {account_filter}: "
+                            f"{'🇳🇱 Dutch' if _sel_info['lang']=='nl' else '🇫🇷 French' if _sel_info['lang']=='fr' else '🇬🇧 English'} "
+                            f"— select it above to generate in customer's language"
+                        )
+                except ImportError:
+                    pass
         else:
             account_filter = accounts[0] if accounts else "All accounts"
             st.text_input("Account", value=account_filter,
