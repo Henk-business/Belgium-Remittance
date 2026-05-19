@@ -373,9 +373,20 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
         df = df[due.isna() | (due >= ref_ts)].copy()
 
     # ── Month range filter ────────────────────────────────────────────────────
+    # Filters to rows whose net due date falls within [month_from, month_to]
+    # in the SAME YEAR as the reference date.
     if (month_from != 1 or month_to != 12) and ndd_col:
+        ref_year = ref_ts.year
         due_m = df[ndd_col].dt.month
-        df = df[due_m.isna() | ((due_m >= month_from) & (due_m <= month_to))].copy()
+        due_y = df[ndd_col].dt.year
+        # Keep rows where:
+        # - NDD is in the reference year AND month is in range, OR
+        # - NDD is in a different year (keep — those are historical overdues), OR
+        # - NDD is NaT (keep — unknown due date rows)
+        in_ref_year = due_y == ref_year
+        in_range    = (due_m >= month_from) & (due_m <= month_to)
+        keep_mask   = df[ndd_col].isna() | ~in_ref_year | (in_ref_year & in_range)
+        df = df[keep_mask].copy()
 
     # ── Group into clearing-doc groups using assignment/document grouping ──────
     # For the flat current overview we treat rows as one big group — no SAP
@@ -501,7 +512,11 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
     _sub = {"en": "Current open items  ·  Positive = invoices (red)  ·  Negative = credits / payments (green)",
             "nl": "Huidige openstaande posten  ·  Positief = facturen (rood)  ·  Negatief = creditnota's / betalingen (groen)",
             "fr": "Postes ouverts actuels  ·  Positif = factures (rouge)  ·  Négatif = avoirs / paiements (vert)"}
-    subtitle_val = f"{_sub.get(lang, _sub['en'])}  ·  {today_str}"
+    _month_names_en = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    _month_filter_str = ""
+    if month_from != 1 or month_to != 12:
+        _month_filter_str = f"  ·  {_month_names_en[month_from-1]}–{_month_names_en[month_to-1]} only"
+    subtitle_val = f"{_sub.get(lang, _sub['en'])}{_month_filter_str}  ·  {today_str}"
     for ci in range(1, ncols+1):
         ws.cell(2, ci).fill   = _fill(BAND_FILL)
         ws.cell(2, ci).border = _thin()

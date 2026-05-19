@@ -174,6 +174,10 @@ def show():
             )
         if not use_month_filter:
             month_from, month_to = 1, 12
+        else:
+            _mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+            st.caption(f"📅 Month filter active: {_mn[month_from-1]} → {_mn[month_to-1]} "
+                       f"(invoices due outside this range in {yr_max} will be excluded)")
     else:
         ref_date       = datetime.date.today()
         remove_not_due = False
