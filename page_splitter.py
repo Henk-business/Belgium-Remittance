@@ -237,21 +237,67 @@ def show():
     st.markdown("---")
     st.success(f"Done — {len(account_data)} account sheets generated")
 
-    summary_rows = []
+    # ── Account exclusion list ─────────────────────────────────────────────
+    if "spl_excluded" not in st.session_state:
+        st.session_state["spl_excluded"] = set()
+    # Reset exclusions if a new split was just run (account_data keys changed)
+    current_accs = set(str(a) for a in account_data.keys())
+    st.session_state["spl_excluded"] = st.session_state["spl_excluded"] & current_accs
+
+    excluded = st.session_state["spl_excluded"]
+    active_accounts = {acc: df for acc, df in account_data.items() if str(acc) not in excluded}
+
+    if excluded:
+        st.caption(f"⚠ {len(excluded)} account(s) excluded from downloads — click ↩ to restore")
+
+    # ── Summary table with exclude buttons ────────────────────────────────
+    hdr_cols = st.columns([2, 2, 1, 2, 1])
+    for col, lbl in zip(hdr_cols, ["Account", "Reference date", "Lines", "Total (€)", ""]):
+        col.markdown(f"<span style='font-size:12px;font-weight:700;color:#7A7065;'>{lbl}</span>",
+                     unsafe_allow_html=True)
+    st.markdown("<hr style='margin:4px 0 6px;border-color:#E8E3DC;'>", unsafe_allow_html=True)
+
     for acc, acc_df in account_data.items():
+        is_excluded = str(acc) in excluded
         total = acc_df[amount_col].sum() if amount_col and amount_col in acc_df.columns else None
         acc_date = per_acc_dates.get(str(acc), ref_date)
         acc_date_str = pd.Timestamp(acc_date).strftime("%d/%m/%Y")
         date_label = f"{acc_date_str} ⚙" if str(acc) in per_acc_dates else acc_date_str
-        summary_rows.append({
-            "Account": acc,
-            "Reference date": date_label,
-            "Lines": len(acc_df),
-            "Total (€)": f"{total:,.2f}" if total is not None else "—",
-        })
-    st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+        total_str = f"{total:,.2f}" if total is not None else "—"
+
+        row_style = "opacity:0.35;" if is_excluded else ""
+        rc = st.columns([2, 2, 1, 2, 1])
+        with rc[0]:
+            st.markdown(
+                f"<span style='font-size:13px;font-weight:600;color:#0A0A0A;{row_style}'>"
+                f"{'~~' if is_excluded else ''}{acc}{'~~' if is_excluded else ''}</span>",
+                unsafe_allow_html=True
+            )
+        with rc[1]:
+            st.markdown(f"<span style='font-size:13px;color:#5A5550;{row_style}'>{date_label}</span>",
+                        unsafe_allow_html=True)
+        with rc[2]:
+            st.markdown(f"<span style='font-size:13px;color:#5A5550;{row_style}'>{len(acc_df)}</span>",
+                        unsafe_allow_html=True)
+        with rc[3]:
+            color = "#C41230" if total and total < 0 else "#0A0A0A"
+            st.markdown(f"<span style='font-size:13px;font-weight:600;color:{color};{row_style}'>{total_str}</span>",
+                        unsafe_allow_html=True)
+        with rc[4]:
+            if is_excluded:
+                if st.button("↩", key=f"spl_restore_{acc}", help=f"Restore {acc}"):
+                    st.session_state["spl_excluded"].discard(str(acc))
+                    st.rerun()
+            else:
+                if st.button("✕", key=f"spl_excl_{acc}", help=f"Exclude {acc} from downloads"):
+                    st.session_state["spl_excluded"].add(str(acc))
+                    st.rerun()
+
     if per_acc_dates:
         st.caption("⚙ = per-account date override applied")
+
+    # Use only active (non-excluded) accounts for all downloads
+    account_data = active_accounts
 
     # ── SECTION 1: DOWNLOADS ────────────────────────────────────────
     st.markdown("---")
@@ -273,7 +319,8 @@ def show():
     # Build the combined workbook with the selected language (happens on every render,
     # cheap enough for typical account counts).
     _translated_all = build_split_workbook(
-        account_data, amount_col, today=ref_date, lang=dl_lang
+        account_data, amount_col, today=ref_date, lang=dl_lang,
+        per_account_dates=per_acc_dates
     )
 
     st.download_button(
@@ -292,7 +339,8 @@ def show():
             for acc, acc_df in account_data.items():
                 wb_single = build_split_workbook(
                     {acc: acc_df}, amount_col,
-                    today=ref_date, lang=dl_lang
+                    today=per_acc_dates.get(str(acc), ref_date),
+                    lang=dl_lang, per_account_dates=per_acc_dates
                 )
                 zf.writestr(f"{acc}_{safe_date}.xlsx", wb_single.getvalue())
         zip_buf.seek(0)
