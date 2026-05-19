@@ -826,15 +826,25 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     SKIP_TYPES = {"AB", "ZP", "DZ"}
 
     def _group_year_local(grp):
-        dates = []
+        """Year of a group = year of the oldest NET DUE DATE among non-clearing rows.
+        Falls back to doc date only if no net due dates exist.
+        This prevents invoices with a 2025 doc date but 2026 net due date
+        from being bucketed into 2025."""
+        ndd_dates = []
+        doc_dates = []
         for row in grp:
             dt = str(row.get(doc_type_col, "") or "").strip().upper()
             if dt in SKIP_TYPES:
                 continue
-            for c in [ndd_col, doc_date_col]:
-                v = row.get(c) if c else None
+            if ndd_col:
+                v = row.get(ndd_col)
                 if v is not None and pd.notna(v):
-                    dates.append(pd.Timestamp(v))
+                    ndd_dates.append(pd.Timestamp(v))
+            if doc_date_col:
+                v = row.get(doc_date_col)
+                if v is not None and pd.notna(v):
+                    doc_dates.append(pd.Timestamp(v))
+        dates = ndd_dates or doc_dates   # prefer net due date, fallback to doc date
         if not dates:
             return None
         return min(dates).year
