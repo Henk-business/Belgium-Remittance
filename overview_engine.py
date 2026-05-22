@@ -316,24 +316,17 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
     if arr_col: df[arr_col] = pd.to_numeric(df[arr_col],  errors="coerce")
 
     # ── Determine export structure ────────────────────────────────────────────
-    # If blank rows only appear at the END of the file (SAP grand total rows),
-    # ALL real rows are current open items — no group-separator structure exists.
-    # If blank rows appear IN THE MIDDLE between real account rows, the file has
-    # clearing groups and we must split at the first payment (DZ/ZP) row boundary.
+    # Blank rows in SAP exports mean two different things:
+    # (A) GL subtotal rows — in flat open-items exports with Beer+Rent GL codes.
+    #     These are single rows with blank acc+doc appearing once or twice.
+    # (B) Clearing group separators — in multi-year exports with full history.
+    #     These appear many times, between each cleared group.
     #
-    # IMPORTANT: GL subtotal rows (blank acc + blank doc) can appear mid-file in
-    # flat open-item exports that have both Beer and Rent GL codes. These must NOT
-    # trigger the multi-year path. We only treat blanks as group separators when:
-    # (a) there are real rows AFTER a blank, AND
-    # (b) those post-blank real rows have DIFFERENT doc numbers / clearing structure
-    #     than the pre-blank rows — i.e. the blank separates clearing groups, not
-    #     just GL subtotals within the same open set.
-    #
-    # Heuristic: if all real rows share the same single account AND the clearing
-    # doc column is all NaN (pure open-items export), treat as flat — no split.
+    # Rule: if blank rows appear in the middle, count them.
+    # If there are only 1-2 blank rows in the middle AND all real rows are open
+    # (no clearing doc), treat as flat open-items (GL subtotals only) — no split.
+    # If there are 3+ blank rows in the middle, it's a clearing-group export — split.
     doc_col = next((c for c in df.columns if "document number" in c.lower()), None)
-    clr_col = next((c for c in df.columns if "clearing doc" in c.lower() or
-                    c.lower() in ("clearing document", "clearing_doc")), None)
 
     if acc_col:
         is_blank_acc = df[acc_col].isna() | df[acc_col].astype(str).str.strip().isin(["", "nan", "None"])
@@ -341,20 +334,15 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
                        if doc_col else is_blank_acc
         is_blank_mask = is_blank_acc & is_blank_doc
         last_real_idx = df[~is_blank_acc].index.max() if (~is_blank_acc).any() else -1
-        blanks_in_middle = (is_blank_mask & (df.index < last_real_idx)).any()
+        mid_blanks    = is_blank_mask & (df.index < last_real_idx)
+        n_mid_blanks  = mid_blanks.sum()
+        blanks_in_middle = n_mid_blanks > 0
 
-        # Override: if all real rows have the same single account and no clearing
-        # documents exist, this is a flat open-items export — GL subtotal rows
-        # are just section separators, not group boundaries.
-        if blanks_in_middle and acc_col:
-            real_rows = df[~is_blank_acc]
-            unique_accs = real_rows[acc_col].astype(str).str.strip().nunique()
-            all_open = True
-            if clr_col and clr_col in df.columns:
-                all_open = real_rows[clr_col].isna().all() or \
-                           real_rows[clr_col].astype(str).str.strip().isin(["", "nan", "None"]).all()
-            if unique_accs == 1 and all_open:
-                blanks_in_middle = False
+        # If only 1 or 2 blank rows in the middle, this is very likely a flat
+        # open-items export with GL section subtotals (Beer/Rent), NOT a
+        # clearing-group history export. Don't split on the first ZP row.
+        if blanks_in_middle and n_mid_blanks <= 2:
+            blanks_in_middle = False
     else:
         blanks_in_middle = False
 
