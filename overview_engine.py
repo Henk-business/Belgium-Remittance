@@ -353,6 +353,24 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
         is_real = df[acc_col].notna() & ~df[acc_col].astype(str).str.strip().isin(["", "nan", "None"])
         df = df[is_real].copy()
 
+    # ── Remove zero-net clearing groups from current open ─────────────────────
+    # Some exports contain balanced clearing pairs (AB type, net = 0) sitting
+    # before the first DZ/ZP row, so they land in "current open" incorrectly.
+    # Any group of rows that nets to exactly zero is already settled — remove it.
+    # We group by the clearing reference (Reference Key 3 or Assignment) to find pairs.
+    if amt_col and amt_col in df.columns:
+        _amt_num = pd.to_numeric(df[amt_col], errors="coerce").fillna(0)
+        _ref_col = next((c for c in df.columns if "reference key 3" in c.lower()), None) or \
+                   next((c for c in df.columns if "assignment" in c.lower()), None)
+        if _ref_col and _ref_col in df.columns:
+            # Compute net per reference group
+            _ref_vals = df[_ref_col].astype(str).str.strip()
+            _group_nets = _amt_num.groupby(_ref_vals).sum().abs()
+            # Keep only groups with a non-zero net (genuinely open)
+            _open_refs  = _group_nets[_group_nets > 0.01].index
+            _keep_mask  = _ref_vals.isin(_open_refs) | (_ref_vals.isin(["", "nan", "None"]))
+            df = df[_keep_mask].copy()
+
     # ── Recalculate arrears against reference_date ────────────────────────────
     df = _recalc_arrears(df, ref_ts.date())
     if arr_col: df[arr_col] = pd.to_numeric(df[arr_col], errors="coerce")
@@ -975,6 +993,11 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     # are by definition the outstanding/overdue items the user wants excluded.
     # ══════════════════════════════════════════════════════════════════════════
     if current_open_groups and not remove_overdues:
+        # Remove zero-net clearing groups from current open — balanced pairs
+        # (AB clearing docs netting to 0) belong in historical, not current open
+        def _grp_net(grp):
+            return sum(float(r.get(amt_col, 0) or 0) for r in grp)
+        current_open_groups = [g for g in current_open_groups if abs(_grp_net(g)) > 0.01]
         # Dark-blue banner — MERGED across all columns
         for ci in range(1, ncols+1):
             ws.cell(r, ci).fill   = _fill(HDR_FILL)
