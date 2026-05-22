@@ -852,36 +852,50 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     SKIP_TYPES = {"AB", "ZP", "DZ"}
 
     def _group_year_local(grp):
-        """Year of a group = year of the oldest NET DUE DATE among non-clearing rows.
-        Falls back to doc date only if no net due dates exist.
-        Falls back to clearing/payment rows' dates if all rows are clearing types."""
-        ndd_dates = []
-        doc_dates = []
-        skip_ndd_dates = []
-        skip_doc_dates = []
+        """Year of a group = determined by the INVOICE rows (positive amounts).
+        Credits and payments are settlements — they don't define the year.
+        Only falls back to credits/payments if there are no invoice rows at all.
+        Falls back further to clearing/payment rows if all rows are clearing types."""
+        inv_ndd  = []   # invoice net due dates
+        inv_doc  = []   # invoice document dates
+        cred_ndd = []   # credit/payment net due dates
+        cred_doc = []   # credit/payment document dates
+        skip_ndd = []   # AB/ZP/DZ net due dates (last resort)
+        skip_doc = []   # AB/ZP/DZ document dates (last resort)
+
         for row in grp:
-            dt = str(row.get(doc_type_col, "") or "").strip().upper()
-            is_skip = dt in SKIP_TYPES
-            if ndd_col:
-                v = row.get(ndd_col)
+            dt  = str(row.get(doc_type_col, "") or "").strip().upper()
+            amt = float(row.get(amt_col, 0) or 0) if amt_col else 0
+
+            is_skip    = dt in SKIP_TYPES
+            is_invoice = (not is_skip) and (amt > 0)
+            is_credit  = (not is_skip) and (amt <= 0)
+
+            def _get_ts(col):
+                v = row.get(col)
                 if v is not None and pd.notna(v):
-                    try:
-                        ts = pd.Timestamp(v)
-                        (skip_ndd_dates if is_skip else ndd_dates).append(ts)
-                    except Exception:
-                        pass
-            if doc_date_col:
-                v = row.get(doc_date_col)
-                if v is not None and pd.notna(v):
-                    try:
-                        ts = pd.Timestamp(v)
-                        (skip_doc_dates if is_skip else doc_dates).append(ts)
-                    except Exception:
-                        pass
-        dates = ndd_dates or doc_dates or skip_ndd_dates or skip_doc_dates
+                    try: return pd.Timestamp(v)
+                    except: pass
+                return None
+
+            ndd_ts = _get_ts(ndd_col)      if ndd_col      else None
+            doc_ts = _get_ts(doc_date_col) if doc_date_col else None
+
+            if is_invoice:
+                if ndd_ts: inv_ndd.append(ndd_ts)
+                if doc_ts: inv_doc.append(doc_ts)
+            elif is_credit:
+                if ndd_ts: cred_ndd.append(ndd_ts)
+                if doc_ts: cred_doc.append(doc_ts)
+            else:  # skip type (AB/ZP/DZ)
+                if ndd_ts: skip_ndd.append(ndd_ts)
+                if doc_ts: skip_doc.append(doc_ts)
+
+        # Priority: invoice NDD > invoice doc date > credit NDD > credit doc date > skip
+        dates = inv_ndd or inv_doc or cred_ndd or cred_doc or skip_ndd or skip_doc
         if not dates:
             return None
-        return min(dates).year
+        return max(dates).year  # use NEWEST invoice date — most recent invoice defines the bucket
 
     year_groups: dict = {}
     for grp in historical_groups:
