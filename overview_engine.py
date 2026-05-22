@@ -357,16 +357,12 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
         blanks_in_middle = False
 
     if blanks_in_middle:
-        # Multi-group export: open items are everything before the first DZ/ZP row
-        PAY_TYPES = {"DZ", "ZP"}
-        first_pay_index = None
-        if doc_type_col:
-            for idx, row in df.iterrows():
-                if str(row.get(doc_type_col, "") or "").strip().upper() in PAY_TYPES:
-                    first_pay_index = idx
-                    break
-        if first_pay_index is not None:
-            df = df[df.index < first_pay_index].copy()
+        # Multi-group export: the FIRST blank separator row marks the end of current open.
+        # Everything before the first blank separator = current open items.
+        # Everything from the first blank onwards = cleared historical groups.
+        first_blank_idx = df[is_blank_mask].index.min() if is_blank_mask.any() else None
+        if first_blank_idx is not None:
+            df = df[df.index < first_blank_idx].copy()
     # else: no mid-file blank rows → entire file is current open items, use as-is
 
     # Strip blank/SAP-total rows — keep only real account rows
@@ -833,24 +829,21 @@ def build_overview(df: pd.DataFrame, amt_col: str,
         current_open_groups = [[r for _, r in grp] for grp in groups_raw]
         historical_groups   = []
     else:
-        # Find the minimum dataframe index of any DZ or ZP row
-        first_pay_index = None
-        if doc_type_col:
-            for idx, row in df.iterrows():
-                dt = str(row.get(doc_type_col, "") or "").strip().upper()
-                if dt in PAY_TYPES:
-                    first_pay_index = idx
-                    break
+        # The FIRST blank separator row marks the boundary between current open
+        # and historical cleared groups — same approach as build_current_overview.
+        is_blank_all = df[acc_col].isna() | df[acc_col].astype(str).str.strip().isin(["", "nan", "None"]) \
+                       if acc_col else pd.Series([False]*len(df), index=df.index)
+        first_blank_idx = df[is_blank_all].index.min() if is_blank_all.any() else None
 
-        if first_pay_index is None:
+        if first_blank_idx is None:
             current_open_groups = [[r for _, r in grp] for grp in groups_raw]
             historical_groups   = []
         else:
             current_open_groups = []
             historical_groups   = []
             for grp in groups_raw:
-                max_idx = max(i for i, _ in grp)
-                if max_idx < first_pay_index:
+                first_idx = grp[0][0]
+                if first_idx < first_blank_idx:
                     current_open_groups.append([r for _, r in grp])
                 else:
                     historical_groups.append([r for _, r in grp])
@@ -861,23 +854,31 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     def _group_year_local(grp):
         """Year of a group = year of the oldest NET DUE DATE among non-clearing rows.
         Falls back to doc date only if no net due dates exist.
-        This prevents invoices with a 2025 doc date but 2026 net due date
-        from being bucketed into 2025."""
+        Falls back to clearing/payment rows' dates if all rows are clearing types."""
         ndd_dates = []
         doc_dates = []
+        skip_ndd_dates = []
+        skip_doc_dates = []
         for row in grp:
             dt = str(row.get(doc_type_col, "") or "").strip().upper()
-            if dt in SKIP_TYPES:
-                continue
+            is_skip = dt in SKIP_TYPES
             if ndd_col:
                 v = row.get(ndd_col)
                 if v is not None and pd.notna(v):
-                    ndd_dates.append(pd.Timestamp(v))
+                    try:
+                        ts = pd.Timestamp(v)
+                        (skip_ndd_dates if is_skip else ndd_dates).append(ts)
+                    except Exception:
+                        pass
             if doc_date_col:
                 v = row.get(doc_date_col)
                 if v is not None and pd.notna(v):
-                    doc_dates.append(pd.Timestamp(v))
-        dates = ndd_dates or doc_dates   # prefer net due date, fallback to doc date
+                    try:
+                        ts = pd.Timestamp(v)
+                        (skip_doc_dates if is_skip else doc_dates).append(ts)
+                    except Exception:
+                        pass
+        dates = ndd_dates or doc_dates or skip_ndd_dates or skip_doc_dates
         if not dates:
             return None
         return min(dates).year
