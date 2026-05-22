@@ -891,11 +891,25 @@ def build_overview(df: pd.DataFrame, amt_col: str,
                 if ndd_ts: skip_ndd.append(ndd_ts)
                 if doc_ts: skip_doc.append(doc_ts)
 
-        # Priority: invoice NDD > invoice doc date > credit NDD > credit doc date > skip
-        dates = inv_ndd or inv_doc or cred_ndd or cred_doc or skip_ndd or skip_doc
-        if not dates:
-            return None
-        return max(dates).year  # use NEWEST invoice date — most recent invoice defines the bucket
+        # Use the MAJORITY year from invoice dates — whichever year appears most
+        # among the invoice NDD dates. Ties broken by most recent year.
+        # Falls back through credit dates → skip dates if no invoices.
+        def _majority_year(dates):
+            if not dates:
+                return None
+            from collections import Counter as _C
+            yr_counts = _C(d.year for d in dates)
+            return max(yr_counts, key=lambda y: (yr_counts[y], y))
+
+        year = (
+            _majority_year(inv_ndd)  or
+            _majority_year(inv_doc)  or
+            _majority_year(cred_ndd) or
+            _majority_year(cred_doc) or
+            _majority_year(skip_ndd) or
+            _majority_year(skip_doc)
+        )
+        return year
 
     year_groups: dict = {}
     for grp in historical_groups:
