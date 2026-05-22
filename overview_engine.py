@@ -357,18 +357,19 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
     # Some exports contain balanced clearing pairs (AB type, net = 0) sitting
     # before the first DZ/ZP row, so they land in "current open" incorrectly.
     # Any group of rows that nets to exactly zero is already settled — remove it.
-    # We group by the clearing reference (Reference Key 3 or Assignment) to find pairs.
+    # Rows with no reference key are standalone open items — always keep them.
     if amt_col and amt_col in df.columns:
         _amt_num = pd.to_numeric(df[amt_col], errors="coerce").fillna(0)
         _ref_col = next((c for c in df.columns if "reference key 3" in c.lower()), None) or \
                    next((c for c in df.columns if "assignment" in c.lower()), None)
         if _ref_col and _ref_col in df.columns:
-            # Compute net per reference group
             _ref_vals = df[_ref_col].astype(str).str.strip()
-            _group_nets = _amt_num.groupby(_ref_vals).sum().abs()
-            # Keep only groups with a non-zero net (genuinely open)
+            # Rows with no reference key are always kept (standalone open items)
+            _no_ref = _ref_vals.isin(["", "nan", "None"]) | df[_ref_col].isna()
+            # For rows that DO have a reference, keep only non-zero-net groups
+            _group_nets = _amt_num[~_no_ref].groupby(_ref_vals[~_no_ref]).sum().abs()
             _open_refs  = _group_nets[_group_nets > 0.01].index
-            _keep_mask  = _ref_vals.isin(_open_refs) | (_ref_vals.isin(["", "nan", "None"]))
+            _keep_mask  = _no_ref | _ref_vals.isin(_open_refs)
             df = df[_keep_mask].copy()
 
     # ── Recalculate arrears against reference_date ────────────────────────────
