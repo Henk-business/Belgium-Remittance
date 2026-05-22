@@ -182,17 +182,27 @@ def prepare_df(file_obj):
     if amt_col:
         df[amt_col] = pd.to_numeric(df[amt_col], errors="coerce").fillna(0)
 
-    # Strip SAP-generated subtotal/grand-total rows: blank Account AND blank Document Number.
-    # These appear both at the bottom (grand totals) and mid-file (account subtotals in
-    # multi-account exports). They must never be included in any calculation or detection.
+    # Strip SAP-generated grand-total rows that appear at the TRAILING end of the file.
+    # Mid-file blank rows (clearing group separators) must be PRESERVED — build_overview
+    # uses them to detect the clearing-group structure and split current vs historical.
+    # Only strip rows where BOTH Account AND Document Number are blank AND no real
+    # account row appears after them (i.e. they are truly at the end).
     acc_col_pd = next((c for c in df.columns if c.lower() == "account"), None)
     doc_col_pd = next((c for c in df.columns if "document number" in c.lower()), None)
     if acc_col_pd and doc_col_pd:
-        is_sap_total = (
+        is_blank = (
             (df[acc_col_pd].isna() | df[acc_col_pd].astype(str).str.strip().isin(["", "nan", "None"])) &
             (df[doc_col_pd].isna() | df[doc_col_pd].astype(str).str.strip().isin(["", "nan", "None"]))
         )
-        df = df[~is_sap_total].reset_index(drop=True)
+        # Find the last row that has a real account number
+        real_mask = ~(df[acc_col_pd].isna() | df[acc_col_pd].astype(str).str.strip().isin(["", "nan", "None"]))
+        if real_mask.any():
+            last_real = real_mask[real_mask].index[-1]
+            # Only strip blank rows that come AFTER the last real row (trailing totals)
+            trailing_blank = is_blank & (df.index > last_real)
+            df = df[~trailing_blank].reset_index(drop=True)
+        else:
+            df = df[~is_blank].reset_index(drop=True)
 
     return df, amt_col
 
@@ -1005,11 +1015,6 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     # are by definition the outstanding/overdue items the user wants excluded.
     # ══════════════════════════════════════════════════════════════════════════
     if current_open_groups and not remove_overdues:
-        # Remove zero-net clearing groups from current open — balanced pairs
-        # (AB clearing docs netting to 0) belong in historical, not current open
-        def _grp_net(grp):
-            return sum(float(r.get(amt_col, 0) or 0) for r in grp)
-        current_open_groups = [g for g in current_open_groups if abs(_grp_net(g)) > 0.01]
         # Dark-blue banner — MERGED across all columns
         for ci in range(1, ncols+1):
             ws.cell(r, ci).fill   = _fill(HDR_FILL)
