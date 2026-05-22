@@ -182,25 +182,17 @@ def prepare_df(file_obj):
     if amt_col:
         df[amt_col] = pd.to_numeric(df[amt_col], errors="coerce").fillna(0)
 
-    # Strip trailing SAP grand-total rows: blank Account + blank Document Number
-    # that appear AFTER the last real data row. Mid-file blank rows are group
-    # separators and must be preserved for build_overview group detection.
-    acc_col = next((c for c in df.columns if c.lower() == "account"), None)
-    doc_col = next((c for c in df.columns if "document number" in c.lower()), None)
-    if acc_col and doc_col:
-        is_real = (
-            df[acc_col].notna() &
-            ~df[acc_col].astype(str).str.strip().isin(["", "nan", "None"])
+    # Strip SAP-generated subtotal/grand-total rows: blank Account AND blank Document Number.
+    # These appear both at the bottom (grand totals) and mid-file (account subtotals in
+    # multi-account exports). They must never be included in any calculation or detection.
+    acc_col_pd = next((c for c in df.columns if c.lower() == "account"), None)
+    doc_col_pd = next((c for c in df.columns if "document number" in c.lower()), None)
+    if acc_col_pd and doc_col_pd:
+        is_sap_total = (
+            (df[acc_col_pd].isna() | df[acc_col_pd].astype(str).str.strip().isin(["", "nan", "None"])) &
+            (df[doc_col_pd].isna() | df[doc_col_pd].astype(str).str.strip().isin(["", "nan", "None"]))
         )
-        if is_real.any():
-            last_real_pos = is_real[::-1].idxmax()  # last index with real data
-            # Drop rows after last_real_pos that have blank acc AND blank doc
-            is_sap_total = (
-                (df[acc_col].isna() | df[acc_col].astype(str).str.strip().isin(["", "nan", "None"])) &
-                (df[doc_col].isna() | df[doc_col].astype(str).str.strip().isin(["", "nan", "None"]))
-            )
-            trailing_totals = is_sap_total & (df.index > last_real_pos)
-            df = df[~trailing_totals].reset_index(drop=True)
+        df = df[~is_sap_total].reset_index(drop=True)
 
     return df, amt_col
 
@@ -326,12 +318,43 @@ def build_current_overview(df: pd.DataFrame, amt_col: str,
     # ── Determine export structure ────────────────────────────────────────────
     # If blank rows only appear at the END of the file (SAP grand total rows),
     # ALL real rows are current open items — no group-separator structure exists.
-    # If blank rows appear IN THE MIDDLE, the file has clearing groups and we
-    # must split at the first payment (DZ/ZP) row boundary.
+    # If blank rows appear IN THE MIDDLE between real account rows, the file has
+    # clearing groups and we must split at the first payment (DZ/ZP) row boundary.
+    #
+    # IMPORTANT: GL subtotal rows (blank acc + blank doc) can appear mid-file in
+    # flat open-item exports that have both Beer and Rent GL codes. These must NOT
+    # trigger the multi-year path. We only treat blanks as group separators when:
+    # (a) there are real rows AFTER a blank, AND
+    # (b) those post-blank real rows have DIFFERENT doc numbers / clearing structure
+    #     than the pre-blank rows — i.e. the blank separates clearing groups, not
+    #     just GL subtotals within the same open set.
+    #
+    # Heuristic: if all real rows share the same single account AND the clearing
+    # doc column is all NaN (pure open-items export), treat as flat — no split.
+    doc_col = next((c for c in df.columns if "document number" in c.lower()), None)
+    clr_col = next((c for c in df.columns if "clearing doc" in c.lower() or
+                    c.lower() in ("clearing document", "clearing_doc")), None)
+
     if acc_col:
-        is_blank_mask = df[acc_col].isna() | df[acc_col].astype(str).str.strip().isin(["", "nan", "None"])
-        last_real_idx = df[~is_blank_mask].index.max() if (~is_blank_mask).any() else -1
+        is_blank_acc = df[acc_col].isna() | df[acc_col].astype(str).str.strip().isin(["", "nan", "None"])
+        is_blank_doc = (df[doc_col].isna() | df[doc_col].astype(str).str.strip().isin(["", "nan", "None"])) \
+                       if doc_col else is_blank_acc
+        is_blank_mask = is_blank_acc & is_blank_doc
+        last_real_idx = df[~is_blank_acc].index.max() if (~is_blank_acc).any() else -1
         blanks_in_middle = (is_blank_mask & (df.index < last_real_idx)).any()
+
+        # Override: if all real rows have the same single account and no clearing
+        # documents exist, this is a flat open-items export — GL subtotal rows
+        # are just section separators, not group boundaries.
+        if blanks_in_middle and acc_col:
+            real_rows = df[~is_blank_acc]
+            unique_accs = real_rows[acc_col].astype(str).str.strip().nunique()
+            all_open = True
+            if clr_col and clr_col in df.columns:
+                all_open = real_rows[clr_col].isna().all() or \
+                           real_rows[clr_col].astype(str).str.strip().isin(["", "nan", "None"]).all()
+            if unique_accs == 1 and all_open:
+                blanks_in_middle = False
     else:
         blanks_in_middle = False
 
