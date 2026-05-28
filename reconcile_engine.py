@@ -11,34 +11,106 @@ from common import (
 )
 
 
+def _extract_pdf_cells(file_obj):
+    """Extract text tokens from a PDF remittance, returning them as a list of rows."""
+    import io
+    data = file_obj.read() if hasattr(file_obj, "read") else file_obj
+    rows = []
+    try:
+        import pdfplumber
+        with pdfplumber.open(io.BytesIO(data)) as pdf:
+            for page in pdf.pages:
+                # Table extraction first (structured remittances)
+                tables = page.extract_tables()
+                if tables:
+                    for table in tables:
+                        for row in table:
+                            if row:
+                                rows.append([str(c or "").strip() for c in row])
+                else:
+                    # Fall back to raw text lines
+                    text = page.extract_text() or ""
+                    for line in text.splitlines():
+                        rows.append(line.split())
+    except Exception:
+        # pdfplumber failed — try pypdf as last resort
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(io.BytesIO(data))
+            for page in reader.pages:
+                text = page.extract_text() or ""
+                for line in text.splitlines():
+                    rows.append(line.split())
+        except Exception:
+            pass
+    return rows
+
+
 def _parse_remittance(file_obj, sap_df):
-    raw = pd.read_excel(file_obj, sheet_name=0, header=None, dtype=str)
-    raw = raw.fillna("")
+    import io
+
+    # Detect file type from name or content
+    name = getattr(file_obj, "name", "") or ""
+    is_pdf = name.lower().endswith(".pdf")
+
+    # Peek at magic bytes if no name
+    if not is_pdf and hasattr(file_obj, "read"):
+        header = file_obj.read(5)
+        file_obj.seek(0)
+        is_pdf = header.startswith(b"%PDF")
+
     sap_refs = set(sap_df["ref"].unique()) - {"", "nan", "None"}
     sap_docs = set(sap_df["doc_number_str"].unique()) - {"", "nan", "None", "0"}
 
     found = {}
-    for row_idx, row in raw.iterrows():
-        for col_idx, cell_val in row.items():
-            cell = str(cell_val).strip()
-            if not cell or cell.lower() in ("nan", "none", ""):
-                continue
-            key = None
-            if cell in sap_refs:
-                key = cell
-            elif cell in sap_docs:
-                key = cell
-            else:
-                for ref in sap_refs:
-                    if len(str(ref)) >= 6 and str(ref) in cell:
-                        key = ref
-                        break
-            if key and key not in found:
-                ctx = " | ".join(
-                    str(v).strip() for v in row.values
-                    if str(v).strip() and str(v).strip().lower() not in ("nan", "none", "")
-                )
-                found[key] = {"sap_ref": key, "context": ctx}
+
+    if is_pdf:
+        rows = _extract_pdf_cells(file_obj)
+        for row in rows:
+            for cell in row:
+                cell = str(cell).strip()
+                if not cell or cell.lower() in ("nan", "none", ""):
+                    continue
+                key = None
+                if cell in sap_refs:
+                    key = cell
+                elif cell in sap_docs:
+                    key = cell
+                else:
+                    for ref in sap_refs:
+                        if len(str(ref)) >= 6 and str(ref) in cell:
+                            key = ref
+                            break
+                if key and key not in found:
+                    ctx = " | ".join(c for c in row if c.strip())
+                    found[key] = {"sap_ref": key, "context": ctx}
+    else:
+        if hasattr(file_obj, "seek"):
+            file_obj.seek(0)
+        raw = pd.read_excel(file_obj, sheet_name=0, header=None, dtype=str)
+        raw = raw.fillna("")
+        for row_idx, row in raw.iterrows():
+            for col_idx, cell_val in row.items():
+                cell = str(cell_val).strip()
+                if not cell or cell.lower() in ("nan", "none", ""):
+                    continue
+                key = None
+                if cell in sap_refs:
+                    key = cell
+                elif cell in sap_docs:
+                    key = cell
+                else:
+                    for ref in sap_refs:
+                        if len(str(ref)) >= 6 and str(ref) in cell:
+                            key = ref
+                            break
+                if key and key not in found:
+                    ctx = " | ".join(
+                        str(v).strip() for v in row.values
+                        if str(v).strip() and str(v).strip().lower() not in ("nan", "none", "")
+                    )
+                    found[key] = {"sap_ref": key, "context": ctx}
+
     return list(found.values())
 
 

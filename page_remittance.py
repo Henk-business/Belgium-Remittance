@@ -37,7 +37,7 @@ def _show_remittance():
                                     label_visibility="collapsed", key="rem_sap")
     with col2:
         st.markdown("**Client Remittance** — payment advice from customer (.xlsx)")
-        rem_file = st.file_uploader("Remittance", type=["xlsx", "xls"],
+        rem_file = st.file_uploader("Remittance", type=["xlsx", "xls", "pdf"],
                                     label_visibility="collapsed", key="rem_rem")
 
     # ── DETAILS ──────────────────────────────────────────────────────────────
