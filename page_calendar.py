@@ -122,7 +122,30 @@ def show():
                         st.rerun()
 
     # ── Today's tasks banner ───────────────────────────────────────────────
-    today_tasks = active_cal.get(today.day, [])
+    # Respect weekend shift: if today is Sat/Sun, show the shifted tasks
+    import datetime as _dt
+    _today_dow = today.weekday()
+    if _today_dow == 5:    # Saturday → show Friday's tasks
+        _today_lookup = today.day - 1
+    elif _today_dow == 6:  # Sunday → show Monday's tasks
+        _today_lookup = today.day + 1
+    else:
+        _today_lookup = today.day
+    # Also include any tasks shifted TO today from a weekend
+    today_tasks = active_cal.get(_today_lookup, [])
+    # Pick up any tasks originally on a weekend that shifted to today
+    _today_date = _dt.date(today.year, today.month, today.day)
+    for _sched_day, _tasks in active_cal.items():
+        if _sched_day == _today_lookup:
+            continue
+        try:
+            _sched_obj = _dt.date(today.year, today.month, _sched_day)
+        except ValueError:
+            continue
+        _dow = _sched_obj.weekday()
+        if (_dow == 5 and _sched_day - 1 == today.day) or \
+           (_dow == 6 and _sched_day + 1 == today.day):
+            today_tasks = list(today_tasks) + [{**t, "_shifted_from": _sched_day} for t in _tasks]
 
     if today_tasks:
         pills = ""
@@ -187,6 +210,33 @@ def show():
     st.markdown(f"<div style='margin:8px 0 16px;line-height:2;'>{legend}</div>",
                 unsafe_allow_html=True)
 
+    # ── Weekend shift helper ───────────────────────────────────────────────
+    # If a scheduled day falls on a Saturday → move to Friday (day-1)
+    # If a scheduled day falls on a Sunday  → move to Monday (day+1)
+    # Build a resolved map: {actual_display_day: [tasks including shifted ones]}
+    import datetime as _dt
+    resolved_cal = {}
+    for sched_day, tasks_list in active_cal.items():
+        if sched_day < 1 or sched_day > days_in_month:
+            continue
+        try:
+            d_obj = _dt.date(sel_year, month_num, sched_day)
+        except ValueError:
+            continue
+        dow = d_obj.weekday()  # 0=Mon … 4=Fri, 5=Sat, 6=Sun
+        if dow == 5:           # Saturday → move to Friday
+            target_day = sched_day - 1
+        elif dow == 6:         # Sunday → move to Monday
+            target_day = sched_day + 1
+        else:
+            target_day = sched_day
+        # Clamp to valid days in month
+        target_day = max(1, min(days_in_month, target_day))
+        # Tag tasks with original day if shifted so it's visible on the chip
+        if target_day != sched_day:
+            tasks_list = [{**t, "_shifted_from": sched_day} for t in tasks_list]
+        resolved_cal.setdefault(target_day, []).extend(tasks_list)
+
     # ── Calendar grid ──────────────────────────────────────────────────────
     day_names = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
     header = "".join(
@@ -197,7 +247,7 @@ def show():
     cells = ["<div></div>"] * first_weekday
 
     for d in range(1, days_in_month + 1):
-        tasks    = active_cal.get(d, [])
+        tasks    = resolved_cal.get(d, [])
         is_today = (d == today.day and month_num == today.month and sel_year == today.year)
         is_wknd  = (first_weekday + d - 1) % 7 >= 5
         bg     = "#F5F3F0" if is_wknd else "white"
@@ -209,11 +259,12 @@ def show():
         for t in tasks[:4]:
             c   = TYPE_COLORS.get(t["type"], {"bg":"#E8E3DC","fg":"#0A0A0A"})
             fmt = f" ({t['format']})" if t.get("format") else ""
+            shift_tag = f" ⇒{t['_shifted_from']}" if t.get("_shifted_from") else ""
             chips += (
                 f"<span style='display:block;background:{c['bg']};color:{c['fg']};"
                 f"font-size:9px;font-weight:600;padding:2px 5px;border-radius:3px;"
                 f"margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"
-                f"{t['type']}{fmt}: {t['account']}</span>"
+                f"{t['type']}{fmt}: {t['account']}{shift_tag}</span>"
             )
         if len(tasks) > 4:
             chips += f"<span style='font-size:9px;color:#7A7065;margin-top:2px;display:block;'>+{len(tasks)-4} more</span>"
@@ -245,7 +296,7 @@ def show():
             key="cal_pick"
         )
 
-    pick_tasks  = active_cal.get(pick_day, [])
+    pick_tasks  = resolved_cal.get(pick_day, [])
     picked_date = datetime.date(sel_year, month_num, pick_day)
 
     if pick_tasks:
