@@ -628,7 +628,7 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
         keep_cols.append(arrears_col2)
     ncols_ok = len(keep_cols)
     _mw(ws_ok, 1, 1, ncols_ok,
-        f"X Payouts — OK (clean accounts)  —  {today_str}  ·  {len(ok_accs)} accounts",
+        f"X Payouts — OK (RS bonus lines only, clean accounts)  —  {today_str}  ·  {len(ok_accs)} accounts",
         bold=True, bg=DK_BLUE, fg=WHITE, sz=12)
     ws_ok.row_dimensions[1].height = 28
     for ci, h in enumerate(keep_cols, 1):
@@ -640,12 +640,19 @@ def _build_payout_report(df, cutoff_date, today_str) -> tuple:
     ok_rows_df = df[df[acc_col].apply(lambda v: str(v).strip().split(".")[0].lstrip("0").zfill(8) if acc_col else "").isin(ok_accs)].copy() if acc_col else df.iloc[0:0]
     if acc_col:
         ok_rows_df = ok_rows_df.sort_values(acc_col)
+    # ── ONLY show RS rows — the actual bonus payout lines ────────────────────
+    # Exclude all non-RS doc types (RV invoices, AB clearing, ZP payments etc.)
+    # The OK sheet should purely show what we are paying out: RS credits marked X
+    if doc_type_col and doc_type_col in ok_rows_df.columns:
+        ok_rows_df = ok_rows_df[
+            ok_rows_df[doc_type_col].astype(str).str.strip().str.upper().str.startswith("RS")
+        ]
     # Strictly exclude any row with a B or U payment block from the OK sheet
     if pay_block_col and pay_block_col in ok_rows_df.columns:
         ok_rows_df = ok_rows_df[
             ~ok_rows_df[pay_block_col].astype(str).str.strip().str.upper().isin(["B","U"])
         ]
-    # Strictly exclude any positive RS rows (these are blockers, not clean X payouts)
+    # Strictly exclude any positive RS rows (debit re-invoices, not payouts)
     if doc_type_col and doc_type_col in ok_rows_df.columns and amt_col and amt_col in ok_rows_df.columns:
         is_pos_rs = (
             ok_rows_df[doc_type_col].astype(str).str.strip().str.upper().str.startswith("RS") &
