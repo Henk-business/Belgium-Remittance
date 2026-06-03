@@ -613,9 +613,23 @@ def find_amount_combinations(sap_file, payment_amount: float,
         (sap["amount"] != 0)
     ].copy()
 
-    # Separate for labelling but search across both
-    inv_idx  = all_open[all_open["amount"] > 0].index.tolist()
-    cred_idx = all_open[all_open["amount"] < 0].index.tolist()
+    # ── Sort by oldest due date first ─────────────────────────────────────────
+    # Strategy: match oldest invoices first, progressively moving to newer ones.
+    # This mirrors real-world payment behaviour and gives the most logical output.
+    all_open_dated = all_open.copy()
+    if "due_date" in all_open_dated.columns:
+        all_open_dated["_sort_due"] = pd.to_datetime(
+            all_open_dated["due_date"], errors="coerce"
+        ).fillna(pd.Timestamp("2099-12-31"))
+    else:
+        all_open_dated["_sort_due"] = pd.Timestamp("2099-12-31")
+
+    # Invoices: oldest due date first; credits: oldest first too
+    inv_sorted  = all_open_dated[all_open_dated["amount"] > 0].sort_values("_sort_due")
+    cred_sorted = all_open_dated[all_open_dated["amount"] < 0].sort_values("_sort_due")
+
+    inv_idx  = inv_sorted.index.tolist()
+    cred_idx = cred_sorted.index.tolist()
 
     amounts  = all_open["amount"].round(2).tolist()
     idx_list = all_open.index.tolist()
@@ -668,23 +682,27 @@ def find_amount_combinations(sap_file, payment_amount: float,
             if abs(total - target) <= tolerance:
                 _add([inv_i, cred_i], all_open.loc[[inv_i, cred_i]], total)
 
-    # 3. Greedy subset-sum across all open items (invoices + credits)
-    # Sort invoices desc, credits asc (largest credits last so they offset)
-    sorted_all = all_open.sort_values("amount", ascending=False)
-    for _ in range(15):
-        remaining   = target
-        chosen_idx  = []
-        for idx, row in sorted_all.iterrows():
-            amt = round(row["amount"], 2)
-            # Add invoices that bring us closer to target
-            # Add credits only if they're needed to reduce an overshoot
+    # 3. Greedy subset-sum — oldest invoices first, progressively adding newer
+    # Run multiple passes: each pass starts from invoice[0], invoice[1], etc.
+    # so we explore starting from different oldest-invoice anchors.
+    # Credits are always sorted oldest-first and added when they help close the gap.
+    for start_offset in range(min(len(inv_idx), 30)):
+        # Build candidate list: invoices from start_offset onwards (oldest first),
+        # then append all credits so they can offset overshoots
+        inv_candidates  = inv_idx[start_offset:]
+        ordered_indices = inv_candidates + cred_idx  # credits at end
+
+        remaining  = target
+        chosen_idx = []
+        for idx in ordered_indices:
+            amt = round(all_open.at[idx, "amount"], 2)
             if amt > 0 and amt <= remaining + tolerance:
                 chosen_idx.append(idx)
                 remaining = round(remaining - amt, 2)
                 if abs(remaining) <= tolerance:
                     break
             elif amt < 0 and remaining < -tolerance:
-                # We've overshot — a credit can bring us back
+                # Overshot — a credit brings us back in range
                 chosen_idx.append(idx)
                 remaining = round(remaining - amt, 2)
                 if abs(remaining) <= tolerance:
@@ -692,10 +710,23 @@ def find_amount_combinations(sap_file, payment_amount: float,
         if chosen_idx and abs(remaining) <= tolerance + 0.01:
             total = round(sum(all_open.loc[chosen_idx, "amount"]), 2)
             _add(chosen_idx, all_open.loc[chosen_idx], total)
-        sorted_all = sorted_all.sample(frac=1)
+        if len(results) >= max_results:
+            break
 
-    # Sort by diff asc, then fewest items
-    results.sort(key=lambda x: (x["diff"], x["n"]))
+    # Sort: exact matches first, then by diff asc, then prefer sets with oldest invoices
+    def _oldest_due(result):
+        rows = result.get("invoices", [])
+        dues = []
+        for r in rows:
+            d = r.get("due_date")
+            if d and pd.notna(d):
+                try:
+                    dues.append(pd.Timestamp(d))
+                except Exception:
+                    pass
+        return min(dues) if dues else pd.Timestamp("2099-12-31")
+
+    results.sort(key=lambda x: (x["diff"], x["n"], _oldest_due(x)))
     return results[:max_results], sap
 
 
