@@ -13,7 +13,8 @@ def show():
         st.markdown("""
 **What it does**
 
-Two tabs for handling customer payments — remittance matching and amount-only matching.
+Three tabs for handling customer payments — remittance matching, amount-only matching,
+and invoice/credit note matching.
 
 ---
 
@@ -22,7 +23,7 @@ Two tabs for handling customer payments — remittance matching and amount-only 
 Matches a customer's payment advice against your SAP open items line by line.
 
 1. Export open items from SAP FBL5N for that customer → `.xlsx`
-2. Upload the SAP export and the customer's remittance file
+2. Upload the SAP export and the customer's remittance file (Excel **or PDF**)
 3. Enter customer name, payment amount, and payment date
 4. Click **Run Reconciliation**
 
@@ -33,20 +34,41 @@ summary, and a draft follow-up email in EN / NL / FR that you can open directly 
 then substring. SAP is the source of truth — the tool ignores sign conventions in the remittance.
 Already-cleared items are flagged separately as potential doubles.
 
+**PDF remittances:** the tool extracts tables from the PDF automatically (using pdfplumber),
+falling back to raw text extraction if no tables are found.
+
 ---
 
 **Tab 2 — Amount-only matching**
 
 Customer paid without sending a remittance? Enter the amount and the tool finds which
-combination of invoices adds up to it.
+combination of invoices and credit notes adds up to it.
 
 1. Upload SAP export and enter the payment amount
 2. Set a tolerance (default €0.05)
 3. Click **Find matching invoices**
 
-Tries exact single invoice → two-invoice pairs → greedy subset-sum across all open invoices.
-Returns up to 5 options ranked by closeness — 🟢 exact match or 🟡 within tolerance.
+**Matching strategy — oldest invoices first:** the tool always tries to match starting
+from the oldest due-date invoice, then progressively adds newer invoices until the
+target amount is reached. Credits are included automatically when they help reduce
+an overshoot. Returns up to 5 options ranked by closeness — 🟢 exact or 🟡 within tolerance.
 Downloadable as Excel with one sheet per option.
+
+---
+
+**Tab 3 — Invoice / Credit matching**
+
+Upload any SAP open-items export and the system automatically pairs each invoice with
+the credit notes that best offset it.
+
+- **Oldest invoices matched first** — the oldest due-date invoice is matched before newer ones
+- **Exact matches** (net = €0.00) found first, then closest within **€100 difference**
+- **Each credit note used once only** — a credit already used for one invoice match cannot
+  appear in another match
+- After all possible matches, the output shows unmatched invoices (no credits left within €100)
+  and remaining unmatched credits
+
+Output: 4-sheet Excel — Summary · Matches (invoice + credit detail) · Unmatched Invoices · Unmatched Credits.
         """)
 
     # ── Account Splitter ───────────────────────────────────────────────────
@@ -65,25 +87,61 @@ where configured.
 3. Set the global **reference date** (e.g. last day of the month)
 4. Tick **Remove invoices not yet due** if you want to exclude future-dated invoices
 5. Click **Split**
-6. Select document language (EN / NL / FR) — translates RV → Invoice/Factuur/Facture,
-   ZP/DZ → Payment, RS− → Bonus, AB → Clearing, etc.
+6. Select document language (EN / NL / FR)
 7. Download all accounts (standard layout) or individual custom downloads below
+
+---
+
+**Full column translation per language**
+
+All column headers translate automatically based on the selected language:
+
+| Column | EN | NL | FR |
+|---|---|---|---|
+| Account | Account | Rekening | Compte |
+| Assignment | Assignment | Toewijzing | Affectation |
+| Document Number | Document Number | Documentnummer | Numéro de document |
+| Net due date | Net due date | Netto vervaldatum | Date d'échéance nette |
+| Document Type | Description | Omschrijving | Description |
+| Amount | Amount in local currency | Bedrag in lokale valuta | Montant en devise locale |
+| Arrears | Arrears after net due date | Achterstand na vervaldatum | Arriérés après échéance |
+| G/L Account | G/L Account | Grootboekrekening | Compte général |
+
+Document type values also translate per language:
+Invoice / Factuur / Facture · Credit note / Creditnota / Note de crédit · Payment / Betaling / Paiement · Clearing / Verrekening / Ajustement · Bonus / Bonus / Bonus.
+
+---
+
+**Auto-detected customer language**
+
+The system automatically looks up each account's preferred language from the customer
+master file (392 accounts). When you split:
+- The summary table shows each account's name and a language flag (🇳🇱 🇫🇷 🇬🇧)
+- Each account's sheet is generated in that customer's own language
+- Accounts without a language record default to English
 
 ---
 
 **Per-account reference dates**
 
-When "Remove invoices not yet due" is ticked and there are multiple accounts, an
-**⚙️ Per-account date overrides** expander appears. Each account defaults to the global
-date but can be set individually — useful when different customers have different month-end
-cut-offs (e.g. account A = 25th, account B = 31st).
+When "Remove invoices not yet due" is ticked, an **⚙️ Per-account date overrides** expander
+appears. Each account defaults to the global date but can be set individually.
 
 ---
 
 **Results summary table**
 
-After splitting, a table shows each account with its row count and total. Accounts with
-a date override show ⚙ next to their date.
+After splitting, a table shows each account with Name, language flag, reference date,
+row count, and total. Accounts with a date override show ⚙ next to their date.
+Excluded accounts show greyed out with a ↩ restore button.
+
+---
+
+**Account exclusion**
+
+Click ✕ next to any account in the summary table to exclude it from all downloads.
+Click ↩ to restore. Useful when one account in a multi-account export should not
+be sent out this cycle.
 
 ---
 
@@ -131,14 +189,17 @@ Generates a branded Excel account overview in two modes for any customer.
 
 Shows only open (outstanding) items as of a chosen reference date.
 
-- Automatically detects the current-open section from the SAP export (rows before the
-  first DZ/ZP payment row, or all rows if the export is already filtered to open items)
+- **Auto-detects structure:** if the export has 3+ blank separator rows in the middle
+  it is treated as a clearing-group history export and only the current open section
+  is shown. 1–2 mid-file blank rows = GL subtotals only (Beer/Rent split), treated as
+  flat open-items. 0 blank rows = all rows are current open.
 - **Remove not yet due:** hides invoices with a net due date after the reference date
-  (default = off, so all open items show)
-- **Remove current overdues:** hides already-overdue items, leaving only future-dated invoices
-- **Filter by month range:** narrow results to a specific month window within the year
-- Works with single-account exports *and* full multi-year exports — it extracts just
-  the current open section automatically
+- **Remove current overdues:** hides already-overdue items
+- Works with single-account exports *and* full multi-year exports — extracts just the
+  current open section automatically
+- **Zero-net clearing groups removed** from current open: balanced AB+ZP pairs that
+  net to €0 are filtered out (they are already settled and do not belong in the open section).
+  Standalone items with no Reference Key 3 (e.g. standalone AB adjustments) are always kept.
 
 *Output format:* title row → subtitle row → column headers → data rows → Net Balance total.
 
@@ -148,21 +209,41 @@ Shows only open (outstanding) items as of a chosen reference date.
 
 Shows the full clearing history grouped by year, newest year first.
 
-- **Current Open Items** section at the top (can be removed with "Remove current overdues")
+- **Current Open Items** section at the top
 - Each year shows: group count · invoice total · credits total · net balance
-- Within each year, SAP clearing groups are preserved with yellow zero-subtotal rows showing
-  payment grouping boundaries
+- **Year bucketing — majority invoice year:** a group's year is determined by the
+  majority of its invoice net-due-date years (e.g. 8 invoices due 2026, 1 credit due 2025
+  → bucketed into 2026). Ties go to the most recent year. Falls back to credit dates
+  if no invoices; then to clearing row dates as a last resort.
+- Yellow zero-subtotal rows show payment grouping boundaries
 - Year totals in mid-blue; grand Net Balance in dark navy at the bottom
-- Arrears column shows the **original SAP export values** (not recalculated) so they match
-  the source exactly
+- Arrears column shows the **original SAP export values** (not recalculated)
+
+**AB clearing annotations:** when an open AB (clearing adjustment) is visible in the
+Current Open Items section, the tool automatically adds a soft blue annotation row
+beneath it explaining what the AB originated from:
+
+> ↳ Clearing origin: Invoice 13080 15/02/2026 €51,300.69  |  Payment 2000045123 28/02/2026 €-51,100.00
+
+This tells the customer exactly what over/under-payment caused the adjustment, so they
+are not confused by an AB entry standing alone on the account.
+
+---
+
+**Auto-detected customer name & language**
+
+When a single account is detected in the export, the customer's name and preferred
+language are auto-filled from the customer master (392 accounts). Language can be
+overridden manually. For multi-account exports, selecting a specific account from the
+dropdown shows a hint if that account's language differs from the current selection.
 
 ---
 
 **G/L split (both modes)**
 
-When a customer has both Beer (G/L 2400000) and Rent (2530009) invoices, the current
-overview automatically groups them into separate sections with individual subtotals and
-a combined Net Balance. Labels translate per language:
+When a customer has both Beer (G/L 2400000) and Rent (2530009) invoices, the overview
+automatically groups them into separate sections with individual subtotals and a combined
+Net Balance.
 
 | Language | Beer | Rent |
 |---|---|---|
@@ -202,14 +283,23 @@ day of month. Repeats every month. Multiple calendars can be created for differe
 
 ---
 
+**Weekend shift**
+
+If a scheduled task falls on a Saturday it automatically moves to **Friday** (day −1).
+If it falls on a Sunday it moves to **Monday** (day +1). The chip on the calendar shows a
+small ⇒ indicator with the original day number (e.g. `DD: SABIKO ⇒28`) so it is always
+clear that the task was shifted. The edit table always shows the original scheduled days
+so you can see and edit the source schedule without the display shift confusing things.
+
+---
+
 **Today banner**
 
 When tasks are scheduled for today, a black banner appears at the top of the page showing
-each task with a colour-coded pill. Also visible in the **sidebar** on every page so you
-never have to leave your current tool to check.
+each task with a colour-coded pill. Also visible in the **sidebar** on every page.
 
 Sidebar widget also shows:
-- Month progress bar (how far through the month you are)
+- Month progress bar
 - **Next up** — the next day this month with tasks and how many days away it is
 - **Open Calendar →** button
 
@@ -219,10 +309,8 @@ Sidebar widget also shows:
 
 Dropdown at the top of the calendar page. Switch between multiple calendars instantly.
 
-**➕ New calendar** — click the button, type a name, hit Create. Starts empty.
-
-**🗑 Delete calendar** — only available when 2+ calendars exist. Requires a confirmation click.
-
+**➕ New calendar** — click the button, type a name, hit Create.
+**🗑 Delete calendar** — only available when 2+ calendars exist.
 **Rename** — flip on edit mode, use the rename expander at the top.
 
 ---
@@ -230,8 +318,7 @@ Dropdown at the top of the calendar page. Switch between multiple calendars inst
 **Viewing the calendar**
 
 A 7-column month grid shows all scheduled tasks as colour-coded chips inside each day cell.
-Today is highlighted with a gold border. Weekends are greyed out. Use the Month / Year
-selectors to navigate.
+Today is highlighted with a gold border. Weekends are greyed out.
 
 **Colour coding:**
 - 🟡 Yellow = Direct Debit (DD)
@@ -243,24 +330,13 @@ selectors to navigate.
 
 **Editing tasks**
 
-Toggle **✏️ edit mode** on (top-right of the page). The full task list appears as an
-interactive spreadsheet table below the calendar:
+Toggle **✏️ edit mode** on. The full task list appears as an interactive spreadsheet:
 
-- **Click any cell** to edit it inline — Type and Format are dropdowns, Account and Note
-  are free text
-- **Add a row** — use the + button at the bottom of the table, fill in Day (1–31),
-  Type, Account, and optionally Format and Note
-- **Delete a row** — tick the checkbox on the left of the row, then click the bin icon
-  that appears in the table header
-- **Move a task** to a different day — just change the Day number in the Day column
-- Hit **💾 Save changes** to apply — the visual grid updates immediately
-
-The table shows all tasks across all 31 days in one place so you can see and edit
-everything without navigating day by day.
-
----
-
-**Task types**
+- **Click any cell** to edit inline
+- **Add a row** — use the + button, fill in Day (1–31), Type, Account, optionally Format and Note
+- **Delete a row** — tick the checkbox then click the bin icon
+- **Move a task** — change the Day number
+- Hit **💾 Save changes** to apply
 
 | Type | Colour | Used for |
 |---|---|---|
@@ -283,10 +359,8 @@ Requires admin login.
 
 - **POC detection:** template with 29xxxxx Reference Key in column A → automatically
   POC-grouped layout (NEGOBOISSONS style)
-- **Plain table detection:** SAP-style column headers detected regardless of merged title
-  rows above. Title rows are refreshed with current values on each split.
-- **Chunked layout:** enter account + batch size in Chunking rules → invoices split into
-  payment batches of that size.
+- **Plain table detection:** SAP-style column headers detected regardless of merged title rows above
+- **Chunked layout:** enter account + batch size in Chunking rules → invoices split into batches
 
 ---
 
@@ -296,15 +370,13 @@ Requires admin login.
 → tick Flat merge if needed → Save group. Requires admin login.
 
 - **Multi-sheet:** one sheet per account. Template required on primary account.
-- **Flat merge:** all rows combined, sorted by net due date. No template needed.
-  Useful for linked accounts like 30351345 + 30104410.
+- **Flat merge:** all rows combined, sorted by net due date.
 
 ---
 
 **Admin access**
 
-A password set in Streamlit secrets protects all write/delete actions (save template,
-replace template, delete template, save rule, delete rule, save group, delete group).
+A password set in Streamlit secrets protects all write/delete actions.
 Enter the password once per session in the 🔐 Admin login expander.
         """)
 
@@ -314,31 +386,37 @@ Enter the password once per session in the 🔐 Admin login expander.
 **Tab 1 — Customer matching**
 
 Compare your SAP customer list against a bonus/partner file. Shows which accounts match,
-which are in the bonus file but missing from SAP, and which SAP accounts are absent from
-the bonus file.
+which are in the bonus file but missing from SAP, and which SAP accounts are absent.
 
-1. Upload SAP export and the bonus/partner file
+1. Upload SAP export and the bonus/partner file (reads ALL sheets automatically)
 2. Confirm which column holds the account number in each
 3. Click **Run matching**
 
 Output: annotated bonus file (green = match, orange = not in SAP, yellow = added from SAP),
-a Summary sheet with counts, and a list of missing accounts.
+a Summary sheet, and a list of missing accounts.
 
 ---
 
 **Tab 2 — Payout & block checker**
 
-Scans a SAP export to verify:
-- All **Payment Method X** (payout-to-customer) rows have no B or U payment block
-- No **B-blocked** items anywhere in the export
-- No **open invoices** on or before a chosen cutoff date (default: 21st of the month)
+Scans a SAP export to verify payout eligibility.
 
 1. Upload the SAP export
-2. Set the invoice cutoff date
+2. Set the invoice cutoff date (default: 21st of the month)
 3. Click **Run check**
 
-Output: dashboard with counts and colour-coded alerts, plus downloadable Excel with four
-sheets — X payouts OK · X payouts blocked · B-blocked items · open invoices by cutoff.
+The output Excel contains **four sheets:**
+
+- **X Payouts — OK (RS bonus lines only):** clean payout-eligible accounts showing
+  **only the RS bonus credit rows** — no RV invoices, no ZP payments, no clearing docs.
+  This is a pure list of what will be paid out: RS debits marked X, no blockers.
+  Positive RS rows (debit re-invoices) are excluded.
+- **X Payouts BLOCKED:** RS rows with B or U payment block
+- **B-Blocked Items:** any row with a B block anywhere in the export
+- **Open Invoices by cutoff:** invoices open on or before the cutoff date
+
+**Clerk filter:** only the 82 allowed clerk codes are included in the payout check
+(C1–C7, B1–B9, N1–N2, P1–P6, F1–F5, I1–I6, A1–A8, D1–D6, H1–H7, Z1–Z9, 70–75, 90, W1–W8, X1–X2).
         """)
 
     # ── General ────────────────────────────────────────────────────────────
@@ -355,8 +433,7 @@ Nothing goes to a third-party server.
 That depends on deployment. If running on **Streamlit Community Cloud** (streamlit.io),
 data passes through Streamlit's AWS servers — acceptable for internal tooling but check
 with your IT team for sensitive financial data. For maximum security, deploy on **Azure App
-Service** or an on-premise server so data never leaves the AB InBev network. Azure AD
-authentication can also be added so only AB InBev employees can access the app.
+Service** or an on-premise server so data never leaves the AB InBev network.
 
 **What SAP export format do I need?**
 
@@ -366,41 +443,41 @@ automatically. For multi-year Customer Overview, export the full transaction his
 
 **Why do my arrears numbers in the multi-year overview differ from the export?**
 
-They shouldn't — as of v143, the multi-year overview preserves the exact arrears values
-from the SAP export. The current overview tool recalculates arrears against your chosen
-reference date (so they reflect that specific date), but the multi-year tool never overwrites them.
+They shouldn't — the multi-year overview preserves the exact arrears values from the SAP
+export. The current overview tool recalculates arrears against your chosen reference date,
+but the multi-year tool never overwrites them.
 
 **Why does the total in the splitter differ from the raw export total?**
 
-Usually because "Remove invoices not yet due" is ticked. Any invoice with a net due date
-after the reference date is excluded. Also check per-account date overrides — if an
-account has a specific override date set, only invoices due on or before that date are included.
-Historical overdue rows (net due date in a prior year) are always included regardless.
+Usually because "Remove invoices not yet due" is ticked. Also check per-account date
+overrides — if an account has a specific override date set, only invoices due on or
+before that date are included. Historical overdue rows (net due date in a prior year)
+are always included regardless.
 
 **Red = invoices, Green = credits — is that right?**
 
-Yes. Positive amounts (invoices, money owed to you) = red. Negative amounts (credit notes,
-payments received) = green. This is the Belgian AR convention used across all outputs.
-
-**The app bounces back to Home when I click a tool in the sidebar**
-
-This was a known issue fixed in v132. If you're still seeing it, make sure you've replaced
-`app.py` and `page_home.py` with the v132+ versions.
+Yes. Positive amounts (invoices) = red. Negative amounts (credit notes, payments) = green.
+This is the Belgian AR convention used across all outputs.
 
 **GitHub status shows 🔴 offline**
 
 The app checks GitHub connectivity once every 5 minutes. A 🔴 means either GitHub is
-unreachable or your token/repo in Streamlit secrets isn't configured. Templates fall back
+unreachable or your token/repo in Streamlit secrets is not configured. Templates fall back
 to session-only storage until connectivity is restored.
+
+**Customer language lookup — which accounts are included?**
+
+392 accounts are in the customer master file (combined from two source files). Each account
+has a preferred language (N = Dutch, F = French, E = English, I = English fallback).
+The lookup works with or without leading zeros — both 30124101 and 0030124101 resolve correctly.
+Accounts not in the master default to English.
 
 **Quality-of-life features**
 
-- **Sidebar task widget** — always shows today's scheduled tasks and what's coming next,
-  from whichever calendar is currently selected. Collapses cleanly when not needed.
-- **Version** shown in sidebar (e.g. v145)
-- **GitHub status** — 🟢 connected or 🔴 offline in sidebar (checked every 5 minutes, not on every click)
+- **Sidebar task widget** — always shows today's tasks with weekend shift applied
 - **Freeze panes** on all generated Excels so headers stay fixed when scrolling
 - **Consistent filenames** — all downloads include the account number and date
 - **Language persists** within a session once set in any tool
 - **Sender name & company persist** across pages once entered in any email draft
+- **GitHub status** — 🟢 connected or 🔴 offline in sidebar (checked every 5 minutes)
         """)
