@@ -784,6 +784,7 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     arr_col      = next((c for c in df.columns if "arrears"       in c.lower()), None)
     doc_type_col = next((c for c in df.columns if "document type" in c.lower()), None)
     doc_date_col = next((c for c in df.columns if c.lower() == "document date"), None)
+    doc_col      = next((c for c in df.columns if "document number" in c.lower()), None)
     acc_col      = next((c for c in df.columns if c.lower() in ("account","konto","debitor")), None)
 
     if ndd_col:      df[ndd_col]      = pd.to_datetime(df[ndd_col],      errors="coerce")
