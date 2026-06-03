@@ -1038,6 +1038,95 @@ def build_overview(df: pd.DataFrame, amt_col: str,
     ws.row_dimensions[r].height = 6
     r += 1
 
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # AB ANNOTATION MAP
+    # For every open AB row in current open, find its historical counterpart
+    # so we can show the customer what the AB originated from.
+    # SAP creates AB in pairs — the open AB has the same doc number as an entry
+    # in a historical clearing group alongside the original invoice/payment.
+    # ══════════════════════════════════════════════════════════════════════════
+    ab_annotation_map = {}   # doc_number_str → list of origin row dicts
+
+    if doc_type_col and doc_col:
+        # Collect open AB doc numbers
+        open_ab_docs = set()
+        for grp in current_open_groups:
+            for row in grp:
+                dt = str(row.get(doc_type_col, "") or "").strip().upper()
+                if dt == "AB":
+                    doc_str = str(row.get(doc_col, "") or "").strip()
+                    if doc_str:
+                        open_ab_docs.add(doc_str)
+
+        # Scan historical groups for groups containing those doc numbers
+        for yr_groups_list in year_groups.values():
+            for grp in yr_groups_list:
+                grp_ab_docs = set()
+                for row in grp:
+                    dt = str(row.get(doc_type_col, "") or "").strip().upper()
+                    if dt == "AB":
+                        doc_str = str(row.get(doc_col, "") or "").strip()
+                        if doc_str and doc_str in open_ab_docs:
+                            grp_ab_docs.add(doc_str)
+                if not grp_ab_docs:
+                    continue
+                # Collect non-AB rows from this group as the annotation source
+                origin_rows = []
+                for row in grp:
+                    dt = str(row.get(doc_type_col, "") or "").strip().upper()
+                    if dt == "AB":
+                        continue
+                    amt_v = row.get(amt_col) if amt_col else None
+                    try:
+                        amt_v = float(amt_v) if amt_v is not None and pd.notna(amt_v) else None
+                    except (ValueError, TypeError):
+                        amt_v = None
+                    due_v     = row.get(ndd_col)      if ndd_col      else None
+                    docd_v    = row.get(doc_date_col) if doc_date_col else None
+                    pm_v      = str(row.get(pay_col, "") or "") if pay_col else ""
+                    origin_rows.append({
+                        "doc":    str(row.get(doc_col, "") or ""),
+                        "type":   dt,
+                        "desc":   _desc(dt, amt_v, pm_v, lang),
+                        "date":   due_v or docd_v,
+                        "amount": amt_v,
+                    })
+                for ab_doc in grp_ab_docs:
+                    if ab_doc not in ab_annotation_map:
+                        ab_annotation_map[ab_doc] = origin_rows
+
+    _ann_lbl = {
+        "en": "↳ Clearing origin: ",
+        "nl": "↳ Herkomst verrekening: ",
+        "fr": "↳ Origine de l'ajustement : ",
+    }.get(lang, "↳ Clearing origin: ")
+
+    def _write_ab_annotation(ws, r, doc_str):
+        """After writing an open AB row, append a soft annotation showing its origin."""
+        origin_rows = ab_annotation_map.get(doc_str)
+        if not origin_rows:
+            return r
+        parts = []
+        for o in origin_rows:
+            date_s = ""
+            if o["date"] is not None:
+                try:
+                    date_s = pd.Timestamp(o["date"]).strftime("%d/%m/%Y")
+                except Exception:
+                    pass
+            amt_s = f"€{o['amount']:,.2f}" if o["amount"] is not None else ""
+            parts.append(f"{o['desc']} {o['doc']} {date_s} {amt_s}".strip())
+        ann_text = _ann_lbl + "  |  ".join(parts)
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=ncols)
+        cell = ws.cell(r, 1, value=ann_text)
+        cell.font      = Font(italic=True, size=8, color="1F3864")
+        cell.fill      = _fill("EBF3FB")
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+        cell.border    = _thin()
+        ws.row_dimensions[r].height = 11
+        return r + 1
+
     # ══════════════════════════════════════════════════════════════════════════
     # SECTION 1 — CURRENT OPEN ITEMS
     # When remove_overdues is True, skip this section entirely — the open items
@@ -1073,6 +1162,12 @@ def build_overview(df: pd.DataFrame, amt_col: str,
                 bg = ROW_WHITE if row_idx % 2 == 0 else ROW_BLUE
                 _write_data_row(ws, r, row, bg, amt_ci)
                 r += 1; row_idx += 1
+                # If this is an open AB, annotate it with its clearing origin
+                if doc_type_col and doc_col:
+                    dt = str(row.get(doc_type_col, "") or "").strip().upper()
+                    if dt == "AB":
+                        doc_str = str(row.get(doc_col, "") or "").strip()
+                        r = _write_ab_annotation(ws, r, doc_str)
             if abs(grp_total) < 0.02:
                 _write_zero_subtotal(ws, r, amt_ci)
                 r += 1; row_idx += 1
