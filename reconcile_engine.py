@@ -862,3 +862,254 @@ def build_amount_match_report(matches, payment_amount: float,
     wb.save(out)
     out.seek(0)
     return out
+
+
+def build_invoice_credit_report(sap_file, customer_name: str = "") -> tuple:
+    """
+    Match each invoice to the credit notes that best offset it.
+    - Oldest invoices matched first
+    - Exact (net = 0) matches prioritised
+    - Near matches within €100 tolerance
+    - Returns (BytesIO Excel, summary dict)
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    from itertools import combinations as _comb
+
+    TOL = 100.00  # max acceptable net difference per match
+
+    sap = parse_sap(sap_file)
+    open_df = sap[sap["is_open"] & sap["amount"].notna() & (sap["amount"] != 0)].copy()
+    open_df["due_date"] = pd.to_datetime(open_df["due_date"], errors="coerce")
+    open_df["amount"]   = pd.to_numeric(open_df["amount"],   errors="coerce")
+
+    invoices = (open_df[open_df["amount"] > 0]
+                .sort_values("due_date", na_position="last")
+                .copy().reset_index(drop=True))
+    credits  = (open_df[open_df["amount"] < 0]
+                .sort_values("due_date", na_position="last")
+                .copy().reset_index(drop=True))
+
+    def _row(r):
+        return {
+            "doc":    str(r.get("doc_number_str", "") or ""),
+            "due":    r.get("due_date"),
+            "amt":    round(float(r["amount"]), 2),
+            "type":   str(r.get("doc_type", "") or ""),
+            "ref":    str(r.get("ref", "") or ""),
+        }
+
+    inv_pool  = [_row(r) for _, r in invoices.iterrows()]
+    cred_pool = [_row(r) for _, r in credits.iterrows()]
+
+    used_inv  = set()
+    used_cred = set()
+    matches   = []   # list of {invoice, credits, net, diff, exact}
+
+    def _best_match(inv_amt, available):
+        """Find the subset of available credits with smallest |inv_amt + sum(credits)|."""
+        best_diff  = float('inf')
+        best_combo = None
+
+        # Single credit
+        for c in available:
+            net = round(inv_amt + c["amt"], 2)
+            if abs(net) < best_diff:
+                best_diff = abs(net)
+                best_combo = [c]
+            if best_diff == 0: return best_combo, best_diff
+
+        # Greedy: oldest credits first, keep adding until we cover invoice
+        chosen = []
+        running = inv_amt
+        for c in available:   # already sorted oldest-first
+            if running + c["amt"] > 0.01:
+                chosen.append(c)
+                running = round(running + c["amt"], 2)
+            if abs(running) <= TOL:
+                break
+        if chosen and abs(running) < best_diff:
+            best_diff = abs(running)
+            best_combo = chosen
+
+        # Try improving: swap one credit for a better-fitting one
+        if best_combo and best_diff > 0.01:
+            current_net = round(inv_amt + sum(c["amt"] for c in best_combo), 2)
+            used_in_best = {c["doc"] for c in best_combo}
+            for extra in available:
+                if extra["doc"] in used_in_best:
+                    continue
+                new_net = round(current_net + extra["amt"], 2)
+                if abs(new_net) < best_diff:
+                    best_diff = abs(new_net)
+                    best_combo = best_combo + [extra]
+                    current_net = new_net
+
+        return best_combo, best_diff
+
+    for inv in inv_pool:
+        if inv["doc"] in used_inv:
+            continue
+        av = [c for c in cred_pool if c["doc"] not in used_cred]
+        if not av:
+            break
+        combo, diff = _best_match(inv["amt"], av)
+        if combo and diff <= TOL:
+            net = round(inv["amt"] + sum(c["amt"] for c in combo), 2)
+            matches.append({
+                "invoice": inv,
+                "credits": combo,
+                "net":     net,
+                "diff":    diff,
+                "exact":   diff < 0.01,
+            })
+            used_inv.add(inv["doc"])
+            for c in combo:
+                used_cred.add(c["doc"])
+
+    unmatched_inv  = [i for i in inv_pool  if i["doc"] not in used_inv]
+    unmatched_cred = [c for c in cred_pool if c["doc"] not in used_cred]
+
+    summary = {
+        "exact":         sum(1 for m in matches if m["exact"]),
+        "near":          sum(1 for m in matches if not m["exact"]),
+        "unmatched_inv": len(unmatched_inv),
+        "unmatched_cred":len(unmatched_cred),
+    }
+
+    # ── Build Excel ────────────────────────────────────────────────────────────
+    def _fill(c): return PatternFill("solid", fgColor=c)
+    def _fnt(bold=False, color="000000", size=9): return Font(bold=bold, color=color, size=size)
+    def _aln(h="left"): return Alignment(horizontal=h, vertical="center")
+    def _thin():
+        s = Side(style="thin", color="CCCCCC")
+        return Border(left=s, right=s, top=s, bottom=s)
+
+    DARK="1F3864"; MID="2E75B6"; WHT="FFFFFF"; GREY="F4F4F4"
+    RED="C00000"; GREEN="00B050"; GOLD="FFC72C"; GOLDD="7F5F00"
+
+    wb = openpyxl.Workbook(); wb.remove(wb.active)
+    today_str = pd.Timestamp("today").strftime("%d/%m/%Y")
+
+    def _mrow(ws, r, c1, c2, val, bold=False, bg=DARK, fg=WHT, sz=10, ha="center", h=16):
+        ws.merge_cells(start_row=r, start_column=c1, end_row=r, end_column=c2)
+        cell = ws.cell(r, c1, value=val)
+        cell.font = _fnt(bold=bold, color=fg, size=sz)
+        cell.fill = _fill(bg)
+        cell.alignment = _aln(ha)
+        ws.row_dimensions[r].height = h
+
+    def _hrow(ws, r, labels):
+        for c, h in enumerate(labels, 1):
+            cell = ws.cell(r, c, value=h)
+            cell.font = _fnt(bold=True, color=WHT, size=9)
+            cell.fill = _fill(DARK); cell.alignment = _aln("center"); cell.border = _thin()
+        ws.row_dimensions[r].height = 14
+
+    def _drow(ws, r, vals, bg=None, bold=False, fg="000000"):
+        bg = bg or (GREY if r % 2 == 0 else WHT)
+        for c, val in enumerate(vals, 1):
+            cell = ws.cell(r, c, value=val)
+            cell.font = _fnt(bold=bold, color=fg, size=9)
+            cell.fill = _fill(bg); cell.border = _thin()
+            if isinstance(val, float):
+                cell.number_format = "€ #,##0.00"; cell.alignment = _aln("right")
+            else:
+                cell.alignment = _aln("left")
+        ws.row_dimensions[r].height = 13
+
+    def _fd(d):
+        if d is None or (hasattr(d, '__class__') and d.__class__.__name__ == 'NaTType'): return ""
+        try: return pd.Timestamp(d).strftime("%d/%m/%Y")
+        except: return str(d)[:10]
+
+    # Sheet 1: Summary
+    ws1 = wb.create_sheet("Summary")
+    for i, w in enumerate([30, 14, 14, 14, 14, 14], 1): ws1.column_dimensions[get_column_letter(i)].width = w
+    r = 1
+    title = f"Invoice / Credit Matching — {customer_name or 'Account'}  ·  {today_str}"
+    _mrow(ws1, r, 1, 6, title, bold=True, sz=13, h=28); r+=1
+    _mrow(ws1, r, 1, 6, "Oldest invoices matched first · Exact matches first · Max difference €100", sz=9, bg=MID, h=16); r+=2
+    for label, val, bg, fg in [
+        ("Total invoices on account",         len(inv_pool),           WHT,      "000000"),
+        ("Total credit notes on account",     len(cred_pool),          WHT,      "000000"),
+        ("",None,WHT,"000000"),
+        ("✓ Exact matches (net = €0.00)",     summary["exact"],        "E2EFDA", GREEN),
+        ("~ Near matches (net ≤ €100)",       summary["near"],         "FFF9E6", "E07000"),
+        ("Unmatched invoices",                summary["unmatched_inv"],"FFF2F2", RED),
+        ("Remaining unmatched credits",       summary["unmatched_cred"],WHT,     "000000"),
+    ]:
+        if label == "":
+            ws1.row_dimensions[r].height = 5; r+=1; continue
+        _drow(ws1, r, [label, "", val if val is not None else "", "", "", ""], bg=bg, fg=fg)
+        ws1.cell(r,1).alignment = _aln("left"); r+=1
+    r+=1
+    _mrow(ws1, r, 1, 6, 'See tabs: "Matches" | "Unmatched Invoices" | "Unmatched Credits"', bg=MID, sz=9, h=16)
+
+    # Sheet 2: All matches
+    ws2 = wb.create_sheet("Matches")
+    for i, w in enumerate([10, 14, 12, 12, 14, 14, 14], 1): ws2.column_dimensions[get_column_letter(i)].width = w
+    r = 1
+    _mrow(ws2, r, 1, 7, f"All Matches — {len(matches)} invoice(s) matched  ·  {today_str}", bold=True, sz=12, h=26); r+=1
+    _mrow(ws2, r, 1, 7, "Each invoice matched to offsetting credit notes · oldest first · max €100 difference", sz=9, bg=MID, h=16); r+=1
+    _hrow(ws2, r, ["Match", "Doc Number", "Due Date", "Type", "Role", "Amount", "Net / Diff"]); r+=1
+
+    for i, m in enumerate(matches, 1):
+        inv = m["invoice"]
+        tag = "✓ EXACT" if m["exact"] else f"~€{m['diff']:.2f}"
+        inv_bg = "1F6B3B" if m["exact"] else MID
+        # Invoice row
+        for ci, val in enumerate([f"#{i} {tag}", inv["doc"], _fd(inv["due"]), inv["type"], "INVOICE", float(inv["amt"]), ""], 1):
+            cell = ws2.cell(r, ci, value=val)
+            cell.font = _fnt(bold=True, color=WHT, size=9); cell.fill = _fill(inv_bg)
+            cell.border = _thin()
+            if isinstance(val, float): cell.number_format = "€ #,##0.00"; cell.alignment = _aln("right")
+            else: cell.alignment = _aln("left")
+        ws2.row_dimensions[r].height = 14; r+=1
+        # Credit rows
+        for c in m["credits"]:
+            _drow(ws2, r, ["", c["doc"], _fd(c["due"]), c["type"], "CREDIT", float(c["amt"]), ""], bg="F2FFF2")
+            ws2.cell(r, 6).font = _fnt(color=GREEN, size=9); r+=1
+        # Net row
+        net_bg = "E2EFDA" if m["exact"] else GOLD
+        net_fg = GREEN if m["exact"] else GOLDD
+        cred_total = sum(c["amt"] for c in m["credits"])
+        for ci, val in enumerate(["", "", "", "NET", "", float(cred_total), float(m["diff"])], 1):
+            cell = ws2.cell(r, ci, value=val)
+            cell.font = _fnt(bold=True, color=net_fg, size=9); cell.fill = _fill(net_bg)
+            cell.border = _thin()
+            if isinstance(val, float): cell.number_format = "€ #,##0.00"; cell.alignment = _aln("right")
+            else: cell.alignment = _aln("center")
+        ws2.row_dimensions[r].height = 14; r+=2
+
+    # Sheet 3: Unmatched invoices
+    ws3 = wb.create_sheet("Unmatched Invoices")
+    for i, w in enumerate([14, 12, 14, 22], 1): ws3.column_dimensions[get_column_letter(i)].width = w
+    r = 1
+    _mrow(ws3, r, 1, 4, f"Unmatched Invoices — {len(unmatched_inv)}  ·  No credits available within €100", bold=True, sz=12, bg=RED, h=26); r+=1
+    _hrow(ws3, r, ["Doc Number", "Due Date", "Amount", "Note"]); r+=1
+    for inv in unmatched_inv:
+        _drow(ws3, r, [inv["doc"], _fd(inv["due"]), float(inv["amt"]), "No matching credits remain"], bg="FFF2F2")
+        ws3.cell(r, 3).font = _fnt(color=RED, size=9); r+=1
+    if unmatched_inv:
+        _drow(ws3, r, ["TOTAL", "", float(sum(i["amt"] for i in unmatched_inv)), ""], bg="FFD7D7", bold=True, fg=RED)
+        ws3.cell(r, 3).font = _fnt(bold=True, color=RED, size=9)
+
+    # Sheet 4: Unmatched credits
+    ws4 = wb.create_sheet("Unmatched Credits")
+    for i, w in enumerate([14, 12, 14, 22], 1): ws4.column_dimensions[get_column_letter(i)].width = w
+    r = 1
+    _mrow(ws4, r, 1, 4, f"Unmatched Credits — {len(unmatched_cred)}  ·  Remaining open after matching", bold=True, sz=12, bg=MID, h=26); r+=1
+    _hrow(ws4, r, ["Doc Number", "Due Date", "Amount", "Note"]); r+=1
+    for crd in unmatched_cred:
+        _drow(ws4, r, [crd["doc"], _fd(crd["due"]), float(crd["amt"]), "No matching invoice"], bg="F2FFF2")
+        ws4.cell(r, 3).font = _fnt(color=GREEN, size=9); r+=1
+    if unmatched_cred:
+        _drow(ws4, r, ["TOTAL", "", float(sum(c["amt"] for c in unmatched_cred)), ""], bg="E2EFDA", bold=True, fg=GREEN)
+        ws4.cell(r, 3).font = _fnt(bold=True, color=GREEN, size=9)
+
+    out = BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return out, summary

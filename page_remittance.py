@@ -17,13 +17,20 @@ def show():
                 "🔍")
     today_bar()
 
-    tab1, tab2 = st.tabs(["📄 Remittance matching", "💰 Amount-only matching"])
+    tab1, tab2, tab3 = st.tabs([
+        "📄 Remittance matching",
+        "💰 Amount-only matching",
+        "🔗 Invoice / Credit matching",
+    ])
 
     with tab1:
         _show_remittance()
 
     with tab2:
         _show_amount_match()
+
+    with tab3:
+        _show_invoice_credit_match()
 
 
 def _show_remittance():
@@ -343,4 +350,56 @@ def _show_amount_match():
             file_name=f"AmountMatch_{safe}_{pmt_amt:.0f}_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="amt_dl",
+        )
+
+def _show_invoice_credit_match():
+    import datetime
+    from reconcile_engine import build_invoice_credit_report
+
+    st.markdown("### 🔗 Invoice / Credit Note Matching")
+    st.markdown(
+        "Upload an SAP open items export. The system will automatically match each invoice "
+        "to the credit notes that best offset it — **oldest invoices first**, exact matches "
+        "prioritised, then closest within **€100 difference**."
+    )
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        sap_file = st.file_uploader(
+            "SAP export (FBL5N open items)", type=["xlsx", "xls"],
+            key="icm_sap", help="All open invoices and credit notes for the account"
+        )
+    with col2:
+        cname = st.text_input("Customer name (optional)", key="icm_cname")
+
+    if not sap_file:
+        st.info("Upload an SAP export to begin matching.")
+        return
+
+    if st.button("🔗 Run invoice / credit matching", type="primary", key="icm_run"):
+        with st.spinner("Matching invoices to credit notes…"):
+            try:
+                sap_file.seek(0)
+                report, summary = build_invoice_credit_report(sap_file, cname or "")
+                st.session_state["icm_report"]  = report
+                st.session_state["icm_summary"] = summary
+            except Exception as e:
+                st.error(f"Error: {e}")
+                import traceback; st.code(traceback.format_exc())
+
+    if "icm_summary" in st.session_state:
+        s = st.session_state["icm_summary"]
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Exact matches",      s["exact"])
+        c2.metric("Near matches (≤€100)", s["near"])
+        c3.metric("Unmatched invoices", s["unmatched_inv"])
+        c4.metric("Remaining credits",  s["unmatched_cred"])
+
+        safe = (cname or "Account").replace(" ","_")[:20]
+        st.download_button(
+            "⬇  Download matching report",
+            data=st.session_state["icm_report"].getvalue(),
+            file_name=f"InvCreditMatch_{safe}_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="icm_dl",
         )
