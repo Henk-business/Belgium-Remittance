@@ -951,11 +951,20 @@ def build_invoice_credit_report(sap_file, customer_name: str = "") -> tuple:
     for inv in inv_pool:
         if inv["doc"] in used_inv:
             continue
+        # Only pass credits not yet used in any previous match
         av = [c for c in cred_pool if c["doc"] not in used_cred]
         if not av:
             break
         combo, diff = _best_match(inv["amt"], av)
         if combo and diff <= TOL:
+            # Final safety check: ensure none of the chosen credits slipped into used_cred
+            # (defensive guard against any edge case in _best_match)
+            combo = [c for c in combo if c["doc"] not in used_cred]
+            if not combo:
+                continue
+            diff = abs(round(inv["amt"] + sum(c["amt"] for c in combo), 2))
+            if diff > TOL:
+                continue
             net = round(inv["amt"] + sum(c["amt"] for c in combo), 2)
             matches.append({
                 "invoice": inv,
@@ -970,6 +979,24 @@ def build_invoice_credit_report(sap_file, customer_name: str = "") -> tuple:
 
     unmatched_inv  = [i for i in inv_pool  if i["doc"] not in used_inv]
     unmatched_cred = [c for c in cred_pool if c["doc"] not in used_cred]
+
+    # ── Final deduplication sweep ─────────────────────────────────────────────
+    # Guarantee no credit appears in more than one match — if any slipped through,
+    # remove it from the later match (keeping the earlier one intact)
+    seen_cred_global = set()
+    clean_matches = []
+    for m in matches:
+        clean_credits = [c for c in m["credits"] if c["doc"] not in seen_cred_global]
+        for c in clean_credits:
+            seen_cred_global.add(c["doc"])
+        if clean_credits:
+            new_net  = round(m["invoice"]["amt"] + sum(c["amt"] for c in clean_credits), 2)
+            new_diff = abs(new_net)
+            if new_diff <= TOL:
+                clean_matches.append({**m, "credits": clean_credits,
+                                      "net": new_net, "diff": new_diff,
+                                      "exact": new_diff < 0.01})
+    matches = clean_matches
 
     summary = {
         "exact":         sum(1 for m in matches if m["exact"]),
